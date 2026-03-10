@@ -8,7 +8,7 @@ use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use tokio::task;
 use pretty_hex::PrettyHex;
 
-use crate::cipher::CipherState;
+use crate::cipher::{CipherS, CipherState};
 
 pub mod cipher;
 
@@ -102,35 +102,22 @@ async fn serve_tcp(
     let mut rbuf = vec![0; 0xFFFF];
     let mut wbuf = vec![0; 0xFFFF];
 
-    let mut state = CipherState::Uninit;
+    let mut state = CipherS::Uninit;
 
     loop {
         tokio::select! {
             read = sock.read(&mut rbuf) => {
-                let mut len = read?;
+                let len = read?;
                 if len == 0 {
                     println!("read 0");
                     return Ok(());
                 }
 
-                println!("<-- {ty}: {:#?}", &rbuf[..len].hex_dump());
-
-                match &state {
-                    CipherState::ClientHandshakeReceived(mitm) => {
-                        if len == 640 {
-                            let raw = mitm.decode_handshake(&mut rbuf[..len]);
-                            println!("<-- hand: {:#?}", raw.hex_dump());
-                            // let data = mitm.encode_for_game(&raw);
-                            // println!("<-- mitm: {:#?}", data.hex_dump());
-                            // rbuf[..data.len()].copy_from_slice(&data);
-                            // len = data.len();
-                            state = CipherState::ServerHandshakeSent;
-                        }
-                    }
-                    _ => (),
-                }
+                // println!("<-- {ty}: {:#?}", &rbuf[..len].hex_dump());
+                let data = state.process_server_message(&rbuf[..len])?;
+                // println!("<-- mitm: {:#?}", &data.hex_dump());
                 
-                socks.write_all(&rbuf[..len]).await?;
+                socks.write_all(&data).await?;
             },
             read = socks.read(&mut wbuf) => {
                 let len = read?;
@@ -139,24 +126,11 @@ async fn serve_tcp(
                     return Ok(());
                 }
                
-                println!("--> {ty}: {:#?}", &wbuf[..len].hex_dump());
+                // println!("--> {ty}: {:#?}", &wbuf[..len].hex_dump());
+                let data = state.process_game_message(&wbuf[..len])?;
+                // println!("--> mitm: {:#?}", &data.hex_dump());
 
-                match &state {
-                    CipherState::Uninit => {
-                        if len == 132 {
-                            let mitm = cipher::MitmRsa::new(&wbuf[..len]);
-                            mitm.fill_pubk(&mut wbuf[..len]);
-                            state = CipherState::ClientHandshakeReceived(mitm);
-                            println!("--> mitm: {:#?}", &wbuf[..len].hex_dump());
-                        }
-                    }
-                    CipherState::ServerHandshakeSent => {
-                        state = CipherState::EncryptedChannel;
-                    }
-                    _ => (),
-                }
-
-                sock.write_all(&wbuf[..len]).await?;
+                sock.write_all(&data).await?;
             }
         }
     }

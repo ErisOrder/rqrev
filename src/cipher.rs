@@ -1,46 +1,107 @@
-// #[derive(Clone)]
-// pub struct CustomRc4 {
-//     s: [u8; 256],
-//     i: u8,
-//     j: u8,
-// }
+#[derive(Clone)]
+pub struct CustomRc4 {
+    s: [u8; 256],
+    i: u8,
+    j: u8,
+}
 
-// impl CustomRc4 {
-//     pub fn new() -> Self {
-//         CustomRc4 {
-//             s: [0; 256],
-//             i: 0,
-//             j: 0,
-//         }
-//     }
+impl CustomRc4 {
+    pub fn new() -> Self {
+        CustomRc4 {
+            s: [0; 256],
+            i: 0,
+            j: 0,
+        }
+    }
 
-//     /// Full setup (KSA + 1000 dummy steps) – call once per session/key
-//     pub fn setup(&mut self, extra_256: &[u8; 256]) {
-//         // Vectorized identity init (scalar equivalent)
-//         for i in 0..256u32 {
-//             self.s[i as usize] = i as u8;
-//         }
+    pub fn from_bytes(data: &[u8]) -> Self {
+        Self {
+            s: data[..256].try_into().unwrap(),
+            i: u32::from_le_bytes(data[256..260].try_into().unwrap()) as u8,
+            j: u32::from_le_bytes(data[260..264].try_into().unwrap()) as u8,
+        }
+    }
 
-//         self.j = 0;
-//         for i in 0..256usize {
-//             let si = self.s[i];
-//             let extra = extra_256[i];
-//             let j_idx = (self.j.wrapping_add(si).wrapping_add(extra)) & 0xFF;
-//             self.j = j_idx;
-//             self.s.swap(i, j_idx as usize);
-//         }
+    pub fn as_bytes(&mut self) -> &mut [u8; 264] {
+        unsafe { core::mem::transmute(self) }
+    }
 
-//         // 1000 dummy PRGA steps (exact match to sub_805AC0)
-//         self.i = 0;
-//         self.j = 0;
-//         for _ in 0..1000 {
-//             self.i = self.i.wrapping_add(1);
-//             let si = self.s[self.i as usize];
-//             let j_idx = self.j.wrapping_add(si);
-//             self.j = j_idx;
-//             self.s.swap(self.i as usize, j_idx as usize);
-//         }
-//     }
+    /// Internal XOR core (used by both encrypt and decrypt)
+    pub fn xor_in_place(&mut self, data: &mut [u8]) {
+        if data.is_empty() {
+            return;
+        }
+
+        let mut i = self.i;
+        let mut j = self.j;
+
+        for byte in data.iter_mut() {
+            i = i.wrapping_add(1);
+
+            let si = self.s[i as usize];
+            j = j.wrapping_add(si);
+
+            let sj = self.s[j as usize];
+
+            // swap
+            self.s[j as usize] = si;
+            self.s[i as usize] = sj;
+
+            // keystream byte
+            let ks = self.s[(si.wrapping_add(sj)) as usize];
+
+            *byte ^= ks;
+        }
+
+        self.i = i;
+        self.j = j;
+    }
+
+    /// Dummy advance (matches sub_805390)
+    pub fn dummy_advance(&mut self, steps: usize) {
+        for _ in 0..steps {
+            self.i = self.i.wrapping_add(1);
+            let si = self.s[self.i as usize];
+            let j_idx = self.j.wrapping_add(si);
+            self.j = j_idx;
+            self.s.swap(self.i as usize, j_idx as usize);
+        }
+    }
+    
+    pub fn setup_rand(&mut self) {
+        let randarr: [u8; 256] = core::array::from_fn(|_| rand::random());
+        self.setup(&randarr);
+    }
+    
+    /// Full setup (KSA + 1000 dummy steps) – call once per session/key
+    pub fn setup(&mut self, extra_256: &[u8; 256]) {
+        // Vectorized identity init (scalar equivalent)
+        for i in 0..256u32 {
+            self.s[i as usize] = i as u8;
+        }
+
+        self.j = 0;
+        for i in 0..256usize {
+            let si = self.s[i];
+            let extra = extra_256[i];
+            let j_idx = (self.j.wrapping_add(si).wrapping_add(extra)) & 0xFF;
+            self.j = j_idx;
+            self.s.swap(i, j_idx as usize);
+        }
+
+        // 1000 dummy PRGA steps (exact match to sub_805AC0)
+        self.i = 0;
+        self.j = 0;
+        for _ in 0..1000 {
+            self.i = self.i.wrapping_add(1);
+            let si = self.s[self.i as usize];
+            let j_idx = self.j.wrapping_add(si);
+            self.j = j_idx;
+            self.s.swap(self.i as usize, j_idx as usize);
+        }
+    }
+}
+
 
 //     /// In-place encryption (matches sub_8051D0)
 //     pub fn encrypt_in_place(&mut self, data: &mut [u8]) {
@@ -52,138 +113,158 @@
 //         self.xor_in_place(data);   // same call!
 //     }
 
-//     /// Internal XOR core (used by both encrypt and decrypt)
-//     fn xor_in_place(&mut self, data: &mut [u8]) {
-//         for byte in data.iter_mut() {
-//             self.i = self.i.wrapping_add(1);
-//             let si = self.s[self.i as usize];
-//             let j_idx = self.j.wrapping_add(si);
-//             self.j = j_idx;
 
-//             let temp = self.s[self.i as usize];
-//             self.s[self.i as usize] = self.s[j_idx as usize];
-//             self.s[j_idx as usize] = temp;
-
-//             let ks_idx = (si.wrapping_add(self.s[j_idx as usize])) & 0xFF;
-//             *byte ^= self.s[ks_idx as usize];
-//         }
-//     }
-
-//     /// Dummy advance (matches sub_805390)
-//     pub fn dummy_advance(&mut self, steps: usize) {
-//         for _ in 0..steps {
-//             self.i = self.i.wrapping_add(1);
-//             let si = self.s[self.i as usize];
-//             let j_idx = self.j.wrapping_add(si);
-//             self.j = j_idx;
-//             self.s.swap(self.i as usize, j_idx as usize);
-//         }
-//     }
-// }
-
-// use rsa::{BigUint, Oaep, Pkcs1v15Encrypt, pkcs1::DecodeRsaPrivateKey};
-
-
+use anyhow::{Result, bail};
 use pretty_hex::PrettyHex;
-use rsa::{BigUint, Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey, hazmat::rsa_decrypt_and_check, rand_core::OsRng, traits::{PaddingScheme, PublicKeyParts}};
+use rsa::{BigUint, RsaPrivateKey, RsaPublicKey, rand_core::OsRng, traits::PublicKeyParts};
 
-// pub enum CipherS {
-//     Uninit,
-//     ClientHandshakeReceived {
-//         my_pk: RsaPrivateKey,
-//         game_pubk: RsaPublicKey,
-//     }
-// }
-
-// impl CipherS {
-//     pub fn process_game_message(&mut self, data: &[u8]) -> Result<()> {
-//         match self {
-//             CipherS::Uninit => {
-//                 // Expect game pubkey
-//                 if data.len() == 132 {
-//                     let n = BigUint::from_bytes_le(&game_pubk[..128]);
-//                     let e = BigUint::from_bytes_le(&game_pubk[128..132]);
-        
-//                     let game_pubk = rsa::RsaPublicKey::new(n, e).unwrap();
-//                     let my_pk = rsa::RsaPrivateKey::new(&mut OsRng, 1015).unwrap();
-                    
-//                 }
-                
-//             },
-//             // CipherS::ClientHandshakeReceived { my_pk, game_pubk } => todo!(),
-//         }
-//     }
-// }
-
-#[derive(Clone)]
-pub enum CipherState {
+pub enum CipherS {
+    Passthrough,
     Uninit,
-    ClientHandshakeReceived(MitmRsa),
-    ServerHandshakeSent,
-    EncryptedChannel,
+    ClientHandshakeReceived {
+        my_pk: RsaPrivateKey,
+        game_pubk: RsaPublicKey,
+    },
+    EncryptedChannel {
+        // Generated RX and TX
+        game_rx: CustomRc4,
+        game_tx: CustomRc4,
+
+        // Server-sent RX and TX
+        srv_rx: CustomRc4,
+        srv_tx: CustomRc4,
+    },
 }
 
-#[derive(Clone)]
-pub struct MitmRsa {
-    my_pk: RsaPrivateKey,
-    game_pubk: RsaPublicKey,
-}
-
-impl MitmRsa {
-    /// Create state with game pubkey
-    pub fn new(game_pubk: &[u8]) -> Self {
-        let n = BigUint::from_bytes_le(&game_pubk[..128]);
-        let e = BigUint::from_bytes_le(&game_pubk[128..132]);
+impl CipherS {
+    pub fn process_game_message(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        match self {
+            CipherS::Passthrough => {
+                println!("--> pass: {:#?}", data.hex_dump());
+                Ok(data.to_vec())
+            },
+            CipherS::Uninit => {
+                println!("--> hand: {:#?}", data.hex_dump());
+                
+                // Expect game pubkey
+                if data.len() == 132 {
+                    let n = BigUint::from_bytes_le(&data[..128]);
+                    let e = BigUint::from_bytes_le(&data[128..132]);
         
-        let game_pubk = rsa::RsaPublicKey::new(n, e).unwrap();
-        let my_pk = rsa::RsaPrivateKey::new(&mut OsRng, 1015).unwrap();
+                    let game_pubk = rsa::RsaPublicKey::new(n, e)?;
+                    let my_pk = rsa::RsaPrivateKey::new(&mut OsRng, 1015)?;
+                    
+                    // Prepare our pubkey for game
+                    let mut out = vec![0; 132];
+                    out[..132].fill(0);
+                    let pubk = my_pk.to_public_key();
+                    out[..127].copy_from_slice(&pubk.n().to_bytes_le());
+                    let exp = pubk.e().to_bytes_le();
+                    out[128..128+exp.len()].copy_from_slice(&exp);
 
-        Self {
-            my_pk,
-            game_pubk,
+                    *self = Self::ClientHandshakeReceived { my_pk, game_pubk };
+                    
+                    Ok(out)
+                } else {
+                    bail!("expected client handshake: 132 bytes")
+                }
+            },
+            CipherS::ClientHandshakeReceived { .. } => bail!("unexpected client message"),
+            CipherS::EncryptedChannel { game_rx, game_tx, srv_rx, srv_tx } => {
+                let mut data = data.to_vec();
+                
+                // Decrypt using our TX box
+                game_tx.xor_in_place(&mut data);
+                println!("--> dec : {:#?}", data.hex_dump());
+                // Encrypt message using server-sent TX box
+                srv_tx.xor_in_place(&mut data);
+                
+                Ok(data)
+            },
         }
     }
 
-    /// Fill our pubkey
-    pub fn fill_pubk(&self, buf: &mut [u8]) {
-        buf[..132].fill(0);
-        let pubk = self.my_pk.to_public_key();
-        buf[..127].copy_from_slice(&pubk.n().to_bytes_le());
-        let exp = pubk.e().to_bytes_le();
-        buf[128..128+exp.len()].copy_from_slice(&exp);
-    }
-
-    /// Decode handshake instead of game
-    pub fn decode_handshake(&self, data: &[u8]) -> Vec<u8> {
-        let mut plaintext = vec![];
+    pub fn process_server_message(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        match self {
+            CipherS::Passthrough => {
+                println!("--> pass: {:#?}", data.hex_dump());
+                Ok(data.to_vec())
+            },
+            CipherS::Uninit => bail!("unexpected server message"),
+            CipherS::ClientHandshakeReceived { my_pk, game_pubk } => {
+                println!("<-- hand_raw: {:#?}", data.hex_dump());
+                
+                // Expect server handshake
+                if data.len() == 640 {
+                    let mut plaintext = vec![];
         
-        let mut data = data.to_vec();
+                    let mut data = data.to_vec();
         
-        // Strange stage: encrypt first 128 bytes with fixes pubkey with broken construction
-        // TODO: How to reverse? -- encrypt using server PK?
-        let pseudo_n = BigUint::from_bytes_le(&MODULUS_PSEUDO);
-        let e = BigUint::from(0x10001u32);
-        let pseudok = RsaPublicKey::new(pseudo_n, e).unwrap();
-        let plain = BigUint::from_bytes_le(&data[..128]);
-        let enc = rsa::hazmat::rsa_encrypt(&pseudok, &plain).unwrap();
-        data[..128].fill(0);
-        data[..127].copy_from_slice(&enc.to_bytes_le()[..127]);
+                    modulus_transform(&mut data)?;
     
-        for (i, block) in data.chunks(128).enumerate() {
-            let cipher = BigUint::from_bytes_le(block);
-            let dec = rsa::hazmat::rsa_decrypt_and_check::<OsRng>(&self.my_pk, None, &cipher).unwrap();
-            let dec = dec.to_bytes_le();
-            // println!("decrypted {i}: {:#?}", dec.hex_dump());
-            plaintext.extend_from_slice(&dec);
+                    for (_i, block) in data.chunks(128).enumerate() {
+                        let cipher = BigUint::from_bytes_le(block);
+                        let dec = rsa::hazmat::rsa_decrypt_and_check::<OsRng>(my_pk, None, &cipher)?;
+                        let dec = dec.to_bytes_le();
+                        // println!("decrypted {i}: {:#?}", dec.hex_dump());
+                        plaintext.extend_from_slice(&dec);
+                    }
+
+                    println!("<-- hand_decoded: {:#?}", plaintext.hex_dump());
+                    
+                    // Import boxes 
+                    let srv_rx = CustomRc4::from_bytes(&plaintext[..264]);
+                    let srv_tx = CustomRc4::from_bytes(&plaintext[264..528]);
+
+                    // Create boxes for client
+                    let mut game_rx = CustomRc4::new();
+                    let mut game_tx = CustomRc4::new();
+                    // game_rx.setup_rand();
+                    // game_tx.setup_rand();
+                    let mut unprep_game_rx = game_rx.clone();
+                    // Apply transform to our box; same transform will be applied by client
+                    modulus_transform(game_rx.as_bytes())?;
+
+                    // Prepare message for client
+                    let mut out = vec![0; 640];
+                    out[..264].copy_from_slice(unprep_game_rx.as_bytes());
+                    out[264..528].copy_from_slice(game_tx.as_bytes());
+                    // TODO: Is this just junk?
+                    out[528..640].fill(0);
+
+                    *self = CipherS::EncryptedChannel { game_rx, game_tx, srv_rx, srv_tx };
+
+                    Ok(out)                
+                } else {
+                    bail!("expected server handshake: 640 bytes");
+                }
+            },
+            CipherS::EncryptedChannel { game_rx, game_tx, srv_rx, srv_tx } => {
+                let mut data = data.to_vec();
+                
+                // Decrypt message using server-sent RX box
+                srv_rx.xor_in_place(&mut data);
+                println!("<-- dec : {:#?}", data.hex_dump());
+                // Encrypt using our RX box
+                game_rx.xor_in_place(&mut data);
+                
+                Ok(data)
+            },
         }
-
-        plaintext
     }
+}
 
-    /// Forge handshake with our keys for game
-    pub fn forge_handshake(&self, data: &[u8]) -> Vec<u8> {
-        todo!()
-    }
+pub fn modulus_transform(data: &mut [u8]) -> Result<()> {
+    // Strange stage: encrypt first 128 bytes with fixes pubkey with broken construction
+    let pseudo_n = BigUint::from_bytes_le(&MODULUS_PSEUDO);
+    let e = BigUint::from(0x10001u32);
+    let pseudok = RsaPublicKey::new(pseudo_n, e)?;
+    let plain = BigUint::from_bytes_le(&data[..128]);
+    let enc = rsa::hazmat::rsa_encrypt(&pseudok, &plain)?.to_bytes_le();
+    data[..128].fill(0);
+    // data[..127].copy_from_slice(&enc.to_bytes_le()[..127]);
+    data[..enc.len()].copy_from_slice(&enc);
+    Ok(())
 }
 
 // Probably modulus of a server, stored in a very tricky way
@@ -407,7 +488,7 @@ pub fn test_cipher() {
     ];
     
     let game_pk = RsaPrivateKey::from_components(n, e, d, primes).unwrap();
-    let game_pubk = game_pk.to_public_key();
+    let _game_pubk = game_pk.to_public_key();
 
     let mut msg = HANDSHAKE_MSG.to_vec();
 
@@ -436,4 +517,20 @@ pub fn test_cipher() {
     }
 
     assert_eq!(AFTER_DECRYPT[..528], out[..528]);
+}
+
+#[test]
+pub fn rc4_roundtrip() {
+    let data: [u8; 243] = core::array::from_fn(|i| i as u8);
+    let mut data_rd = data.clone();
+
+    let mut rc4 = CustomRc4::new();
+    rc4.setup_rand();
+    let mut enc = rc4.clone();
+    let mut dec = rc4;
+
+    enc.xor_in_place(&mut data_rd);
+    dec.xor_in_place(&mut data_rd);
+
+    assert_eq!(data, data_rd);
 }
