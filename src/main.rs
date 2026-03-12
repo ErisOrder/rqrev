@@ -1,16 +1,19 @@
 
-use anyhow::Context;
 use fast_socks5::{
-    ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, run_tcp_proxy, run_udp_proxy, states::CommandRead}, util::target_addr::TargetAddr
+    ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, states::CommandRead}, util::target_addr::TargetAddr
 };
-use std::{future::Future, num::ParseFloatError, time::Duration};
+use pretty_hex::PrettyHex;
+use std::{future::Future, time::Duration};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use tokio::task;
-use pretty_hex::PrettyHex;
+// use pretty_hex::PrettyHex;
 
-use crate::cipher::{CipherS, CipherState};
+use crate::cipher::Mitm;
 
 pub mod cipher;
+pub mod protocol;
+pub mod rqode;
+pub mod ptrace;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -102,7 +105,7 @@ async fn serve_tcp(
     let mut rbuf = vec![0; 0xFFFF];
     let mut wbuf = vec![0; 0xFFFF];
 
-    let mut state = CipherS::Uninit;
+    let mut state = Mitm::new(false, Box::new(ptrace::ptrace));
 
     loop {
         tokio::select! {
@@ -114,7 +117,8 @@ async fn serve_tcp(
                 }
 
                 // println!("<-- {ty}: {:#?}", &rbuf[..len].hex_dump());
-                let data = state.process_server_message(&rbuf[..len])?;
+                let data = state.process_server_data(&rbuf[..len])?;
+                // tokio::time::sleep(Duration::from_millis(300)).await;
                 // println!("<-- mitm: {:#?}", &data.hex_dump());
                 
                 socks.write_all(&data).await?;
@@ -127,7 +131,8 @@ async fn serve_tcp(
                 }
                
                 // println!("--> {ty}: {:#?}", &wbuf[..len].hex_dump());
-                let data = state.process_game_message(&wbuf[..len])?;
+                let data = state.process_game_data(&wbuf[..len])?;
+                // tokio::time::sleep(Duration::from_millis(300)).await;
                 // println!("--> mitm: {:#?}", &data.hex_dump());
 
                 sock.write_all(&data).await?;

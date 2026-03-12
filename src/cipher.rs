@@ -1,3 +1,10 @@
+use std::collections::VecDeque;
+
+use anyhow::{Result, bail};
+use pretty_hex::PrettyHex;
+use ringbuf::{HeapRb, traits::{Consumer, Observer, Producer}};
+use rsa::{BigUint, RsaPrivateKey, RsaPublicKey, rand_core::OsRng, traits::PublicKeyParts};
+
 #[derive(Clone)]
 pub struct CustomRc4 {
     s: [u8; 256],
@@ -102,24 +109,15 @@ impl CustomRc4 {
     }
 }
 
-
-//     /// In-place encryption (matches sub_8051D0)
-//     pub fn encrypt_in_place(&mut self, data: &mut [u8]) {
-//         self.xor_in_place(data);
-//     }
-
-//     /// In-place decryption (identical to encryption)
-//     pub fn decrypt_in_place(&mut self, data: &mut [u8]) {
-//         self.xor_in_place(data);   // same call!
-//     }
-
-
-use anyhow::{Result, bail};
-use pretty_hex::PrettyHex;
-use rsa::{BigUint, RsaPrivateKey, RsaPublicKey, rand_core::OsRng, traits::PublicKeyParts};
+pub struct Mitm {
+    cipher_state: CipherS,
+    passthrough: bool,
+    rx_buf: HeapRb<u8>,
+    tx_buf: HeapRb<u8>,
+    callback: MitmCallback,
+}
 
 pub enum CipherS {
-    Passthrough,
     Uninit,
     ClientHandshakeReceived {
         my_pk: RsaPrivateKey,
@@ -136,13 +134,35 @@ pub enum CipherS {
     },
 }
 
-impl CipherS {
-    pub fn process_game_message(&mut self, data: &[u8]) -> Result<Vec<u8>> {
-        match self {
-            CipherS::Passthrough => {
-                println!("--> pass: {:#?}", data.hex_dump());
-                Ok(data.to_vec())
-            },
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PacketSource {
+    Client,
+    Server,
+}
+
+pub type MitmCallback = Box<dyn FnMut(PacketSource, u16, &mut [u8]) + Send>;
+
+impl Mitm {
+    pub fn new(
+        passthrough: bool,
+        callback: MitmCallback,
+    ) -> Self {
+        Self {
+            cipher_state: CipherS::Uninit,
+            passthrough,
+            rx_buf: HeapRb::new(1000000),
+            tx_buf: HeapRb::new(1000000),
+            callback,
+        }
+    }
+    
+    pub fn process_game_data(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        if self.passthrough {
+            println!("--> pass: {:#?}", data.hex_dump());
+            return Ok(data.to_vec())
+        }
+        
+        match &mut self.cipher_state {
             CipherS::Uninit => {
                 println!("--> hand: {:#?}", data.hex_dump());
                 
@@ -162,7 +182,7 @@ impl CipherS {
                     let exp = pubk.e().to_bytes_le();
                     out[128..128+exp.len()].copy_from_slice(&exp);
 
-                    *self = Self::ClientHandshakeReceived { my_pk, game_pubk };
+                    self.cipher_state = CipherS::ClientHandshakeReceived { my_pk, game_pubk };
                     
                     Ok(out)
                 } else {
@@ -175,7 +195,15 @@ impl CipherS {
                 
                 // Decrypt using our TX box
                 game_tx.xor_in_place(&mut data);
-                println!("--> dec : {:#?}", data.hex_dump());
+
+                let mut data = Self::on_packet(
+                    PacketSource::Client,
+                    &mut self.tx_buf,
+                    &data,
+                    &mut self.callback,
+                );
+
+                // println!("--> dec : {:#?}", data.hex_dump());
                 // Encrypt message using server-sent TX box
                 srv_tx.xor_in_place(&mut data);
                 
@@ -184,12 +212,13 @@ impl CipherS {
         }
     }
 
-    pub fn process_server_message(&mut self, data: &[u8]) -> Result<Vec<u8>> {
-        match self {
-            CipherS::Passthrough => {
-                println!("--> pass: {:#?}", data.hex_dump());
-                Ok(data.to_vec())
-            },
+    pub fn process_server_data(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        if self.passthrough {
+            println!("<-- pass: {:#?}", data.hex_dump());
+            return Ok(data.to_vec())
+        }
+        
+        match &mut self.cipher_state {
             CipherS::Uninit => bail!("unexpected server message"),
             CipherS::ClientHandshakeReceived { my_pk, game_pubk } => {
                 println!("<-- hand_raw: {:#?}", data.hex_dump());
@@ -232,7 +261,7 @@ impl CipherS {
                     // TODO: Is this just junk?
                     out[528..640].fill(0);
 
-                    *self = CipherS::EncryptedChannel { game_rx, game_tx, srv_rx, srv_tx };
+                    self.cipher_state = CipherS::EncryptedChannel { game_rx, game_tx, srv_rx, srv_tx };
 
                     Ok(out)                
                 } else {
@@ -244,13 +273,60 @@ impl CipherS {
                 
                 // Decrypt message using server-sent RX box
                 srv_rx.xor_in_place(&mut data);
-                println!("<-- dec : {:#?}", data.hex_dump());
+                
+                let mut data = Self::on_packet(
+                    PacketSource::Server,
+                    &mut self.rx_buf,
+                    &data,
+                    &mut self.callback,
+                );
+                
                 // Encrypt using our RX box
                 game_rx.xor_in_place(&mut data);
                 
                 Ok(data)
             },
         }
+    }
+    
+    pub fn on_packet(
+        source: PacketSource,
+        buf: &mut HeapRb<u8>,
+        data: &[u8],
+        callback: &mut MitmCallback,
+    ) -> Vec<u8> {
+        
+        // println!("{source:?} INPUT: {:#?}", data.hex_dump());
+        
+        // Push bytes to ringbuffer
+        buf.push_slice(&data);
+        
+        // Dequeue as much packets as possible
+        let mut out = vec![];
+        loop {
+            if buf.occupied_len() < 4 {
+                break
+            }
+            
+            // Peek packet len & type
+            let mut headr = [0u16, 0u16];
+            buf.peek_slice(bytemuck::cast_slice_mut(&mut headr));
+
+            // If buffer has not enough data
+            if buf.occupied_len() < headr[0] as usize {
+                break
+            }
+
+            // Pop packet data
+            let clen = out.len();
+            out.resize(clen + headr[0] as usize, 0);
+            buf.pop_slice(&mut out[clen..]);
+
+            // Callback
+            callback(source, headr[1], &mut out[clen + 4..]);
+        }
+        
+        out
     }
 }
 
@@ -512,7 +588,7 @@ pub fn test_cipher() {
         let cipher = BigUint::from_bytes_le(block);
         let dec = rsa::hazmat::rsa_decrypt_and_check::<OsRng>(&game_pk, None, &cipher).unwrap();
         let dec = dec.to_bytes_le();
-        println!("decrypted {i}: {:#?}", dec.hex_dump());
+        // println!("decrypted {i}: {:#?}", dec.hex_dump());
         out.extend_from_slice(&dec);
     }
 
