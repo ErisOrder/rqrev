@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
+binrw = { version = "0.15.1", default-features = false, features = ["std"] }
 bytemuck = "1.25.0"
 derive_more = { version = "2.1.1", features = ["debug", "try_unwrap"] }
 fast-socks5 = "1.0.0"

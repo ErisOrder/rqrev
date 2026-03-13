@@ -323,7 +323,7 @@ impl Mitm {
             buf.pop_slice(&mut out[clen..]);
 
             // Callback
-            callback(source, headr[1], &mut out[clen + 4..]);
+            callback(source, headr[1], &mut out[clen + 2..]);
         }
         
         out

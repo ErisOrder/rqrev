@@ -1,3 +1,4 @@
+#![feature(seek_stream_len)]
 
 use fast_socks5::{
     ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, states::CommandRead}, util::target_addr::TargetAddr
@@ -14,6 +15,7 @@ pub mod cipher;
 pub mod protocol;
 pub mod rqode;
 pub mod ptrace;
+pub mod rqode_binrw;
 
 #[tokio::main]
 async fn main() -> Result<()> {
