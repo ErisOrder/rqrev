@@ -9,6 +9,7 @@
 //! they are represented as U16 len, variable data
 
 use binrw::{BinRead, BinResult, binrw, helpers::until_eof};
+use pretty_hex::PrettyHex;
 use crate::rqode_binrw::*;
 
 #[derive(Clone, Copy, Debug, num_enum::TryFromPrimitive, num_enum::IntoPrimitive, PartialEq, Eq)]
@@ -61,6 +62,10 @@ pub enum PacketType {
     
     /// Server -> Client
     ChatMessage = 0x4E,
+
+    /// Server -> Client
+    /// Sent when player balance (at least gold) updated
+    UpdateBalance = 0x52,
     
     /// Cleint -> Server
     /// another connection close, no data
@@ -73,6 +78,10 @@ pub enum PacketType {
     /// Server -> Client
     /// Sent when new entity moves
     EntityMove = 0x5C,
+
+    /// Server -> Client
+    /// Sent when entity was removed (or disappear?)
+    EntityRemove = 0x5E,
     
     /// Client -> Server
     /// Move player character
@@ -81,6 +90,10 @@ pub enum PacketType {
     /// Client -> Server
     /// Sent when player attacks entity
     Attck = 0x92,
+    
+    /// Client -> Server
+    /// Sent when player wants to pickup dropped item
+    PickupRequest = 0x95,
 
     /// Server -> Client
     /// Sent when any player deals damage to entity
@@ -92,20 +105,13 @@ pub enum PacketType {
     /// Server -> Client
     /// Sent when entity dies and player receives experience
     /// And gold?
-    ReceivedCurrency = 0xAE,
+    /// Works in both directions?
+    CurrencyDiff = 0xAE,
 
     /// Server -> Client
     /// Sent when character stat gets updated
     StatUpdate = 0xA7,
     
-    /// Client -> Server
-    /// Sent when player increases character stat
-    StatUpdateRequest = 0xCD,
-
-    /// Server -> Client
-    /// Contains PNG avatar of guild?
-    GuildAvatar = 0x148,
-
     /// Client -> Server
     /// Sent when player moves item in inventory
     MoveItemRequst = 0xBB,
@@ -113,6 +119,46 @@ pub enum PacketType {
     /// Server -> Client
     /// Move item confirmation
     MoveItem = 0xBE,
+
+    /// Server -> Client
+    /// Sent when player receives item
+    ReceiveItem = 0xC1,
+    
+    /// Client -> Server
+    /// Sent when player increases character stat
+    StatUpdateRequest = 0xCD,
+
+    /// Client -> Server
+    /// Sent when player buys item from NPC
+    BuyItemRequest = 0x103,
+
+    /// Client -> Server
+    /// Sent when player sells items to NPC
+    SellItemRequest = 0x105,
+
+    /// Client -> Server
+    /// Sent when player buys back their items
+    BuyBackRequest = 0x106,
+    
+    /// Client -> Server
+    /// BuyBack confirmation
+    BuyBack = 0x107,
+
+    /// Both directions
+    /// zlib+deflate compressed blob
+    /// Might optionally be encoded using `yasli` lib
+    /// Usually contains regular packet with size over some threshold
+    CompressedData = 0x129,
+    
+    /// Server -> Client
+    /// Contains PNG avatar of guild?
+    GuildAvatar = 0x148,
+    
+    /// Server -> Client
+    ShowEmotion = 0x194,
+
+    /// Client -> Server
+    ShowEmotionRequest = 0x196,
 
     /// Both directions
     /// Client initiates and server echoes some timestamp
@@ -139,26 +185,48 @@ pub enum Packet {
     HeartbeatServer(HeartbeatServer),
     #[brw(magic(0x4Eu16))]
     ChatMessage(ChatMessage),
+    #[brw(magic(0x52u16))]
+    UpdateBalance(UpdateBalance),
     #[brw(magic(0x5Au16))]
     Entity(Entity),
     #[brw(magic(0x5Cu16))]
     EntityMove(#[br(parse_with = until_eof)] Vec<EntityMove>),
+    #[brw(magic(0x5Eu16))]
+    EntityRemove(EntityRemove),
     #[brw(magic(0x5Fu16))]
     CharacterMove(CharacterMove),
     #[brw(magic(0x92u16))]
     Attack(Attack),
+    #[brw(magic(0x95u16))]
+    PickupRequest(PickupRequest),
     #[brw(magic(0x9Cu16))]
     DealtDamage(DealtDamage),
+    #[brw(magic(0xA4u16))]
+    EntityDeath(EntityDeath),
     #[brw(magic(0xAEu16))]
-    ReceivedCurrency(ReceivedCurrency),
+    CurrencyDiff(CurrencyDiff),
     #[brw(magic(0xA7u16))]
     StatUpdate(StatUpdate),
     #[brw(magic(0xBBu16))]
     MoveItemRequest(MoveItem),
     #[brw(magic(0xBEu16))]
     MoveItemResponse(MoveItem),
+    #[brw(magic(0xC1u16))]
+    ReceiveItem(ReceiveItem),
     #[brw(magic(0xCDu16))]
     StatUpdateRequest(StatUpdateRequest),
+    #[brw(magic(0x103u16))]
+    BuyItemRequest(BuyItemRequest),
+    #[brw(magic(0x105u16))]
+    SellItemRequest(SellItemRequest),
+    #[brw(magic(0x106u16))]
+    BuyBackRequest(BuyBack),
+    #[brw(magic(0x107u16))]
+    BuyBackResponse(BuyBack),
+    #[brw(magic(0x129u16))]
+    CompressedData(CompressedData),
+    #[brw(magic(0x196u16))]
+    ShowEmotion(ShowEmotion),
     #[brw(magic(0x199u16))]
     Heartbeat2(Heartbeat2),
 }
@@ -282,11 +350,29 @@ pub struct EntityMove {
 
 #[binrw]
 #[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub struct EntityRemove {
+    pub id: U32,
+}
+
+#[binrw]
+#[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatMessage {
     pub chat_id: Op21,
     pub text: RString,
     pub name: RString,
+}
+
+// Server: packet 82 (0x52) ; Length: 11 (0xb) bytes
+// 0000:   01 00 08 4c  00 00 00 00  00 00 00                   ...L.......
+// parsed: [U8(0), U64(76)]
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateBalance {
+    pub currency: U8,
+    pub balance: U64,
 }
 
 // Client: packet 146 (0x92) ; Length: 40 (0x28) bytes
@@ -308,6 +394,12 @@ pub struct Attack {
     pub unk13: U32,
 }
 
+#[binrw]
+#[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub struct PickupRequest {
+    pub entity_id: U32,
+}
 
 #[binrw]
 #[brw(little)]
@@ -321,13 +413,25 @@ pub struct DealtDamage {
     pub unk11: U32,
 }
 
+#[binrw]
+#[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub struct EntityDeath {
+    pub id: U32,
+}
+
+// Server: packet 174 (0xae) ReceivedCurrency; Length: 29 (0x1d) bytes
+// 0000:   01 05 08 0f  00 00 00 00  00 00 00 04  00 00 00 00   ................
+// 0010:   04 55 06 00  00 02 01 00  04 00 00 00  00            .U...........
+// parsed: [U8(5), U64(15), U32(0), U32(1621), U16(1), U32(0)]
 // Server: packet 174 (0xae) ; Length: 12 (0xc) bytes
 // 0000:   01 04 04 70  00 00 00 04  13 00 00 00                ...p........
 // parsed: [U8(4), U32(112), U32(19)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReceivedCurrency {
+pub struct CurrencyDiff {
+    // TODO: Not only for receiving
     /// 4 for exp
     /// 8 for gold
     pub ctype: U8,
@@ -358,6 +462,67 @@ pub struct StatUpdate {
 pub struct MoveItem {
     pub from: Op25,
     pub to: Op25,
+}
+
+// parsed: [U8(3), Op25([3, 0, 2, 2]), U32(1621), U16(1), U32(4096)]
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReceiveItem {
+    pub unk0: U8,
+    pub slot: Op25,
+    pub id: U32,
+    pub quant: U16,
+    /// Probably bitflags
+    pub unk1: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuyItemRequest {
+    pub id: U32,
+    pub quant: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SellItemRequest {
+    pub slot: Op25,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuyBack {
+    pub index: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+#[debug("{:#?}", blob.hex_dump())]
+pub struct CompressedData {
+    #[br(parse_with = until_eof)]
+    #[br(try_map = |v: Vec<u8>| zlib_decompress(&v))]
+    pub blob: Vec<u8>,
+    // TODO: Compress
+}
+
+pub fn zlib_decompress(data: &[u8]) -> Result<Vec<u8>, flate2::DecompressError> {
+    let mut out = Vec::with_capacity(131072);
+    let s = flate2::Decompress::new(true)
+        .decompress_vec(data, &mut out, flate2::FlushDecompress::Finish)?;
+    println!("decompress {} bytes: {s:?}", data.len());
+    Ok(out)
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowEmotion {
+    pub emo: RString,
 }
 
 #[binrw]

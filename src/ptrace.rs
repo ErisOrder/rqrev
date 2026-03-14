@@ -57,6 +57,13 @@ pub fn ptrace(
 
     let parsed = Packet::read_partial(&data[..]);
     match parsed {
+        Ok((Packet::CompressedData(mut packet), _)) => {
+            let mut header = [0u16, 0u16];
+            bytemuck::cast_slice_mut(&mut header).copy_from_slice(&packet.blob[..4]);
+            
+            ptrace(source, header[1], &mut packet.blob[2..]);
+            return;
+        },
         Ok((packet, offset)) => {
             println!("{source:?}: packet {ptype:02} ({ptype:#02x}) {sptype}\nparsed: {packet:?}");
             let left = &data[offset..];

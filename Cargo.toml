@@ -9,6 +9,7 @@ binrw = { version = "0.15.1", default-features = false, features = ["std"] }
 bytemuck = "1.25.0"
 derive_more = { version = "2.1.1", features = ["debug", "try_unwrap"] }
 fast-socks5 = "1.0.0"
+flate2 = "1.1.9"
 hex = "0.4.3"
 hex-literal = "1.1.0"
 num_enum = "0.7.5"
