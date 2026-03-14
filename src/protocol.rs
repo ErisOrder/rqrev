@@ -29,24 +29,71 @@ pub enum PacketType {
     /// Client -> Server
     /// close connection, no data
     ConnectionClose = 0x08,
+
+    /// Client -> Server
+    /// Sent when player presses server select button
+    /// Empty
+    FetchServerList = 0x09,
+
+    /// Server -> Client
+    /// Contains list of servers
+    /// Resposnse to 0x09
+    /// Similar to 0x02, but somewhat truncated
+    ServerListResponse = 0x0A,
+
+    /// Client -> Server
+    /// Sent on connection start
+    /// Contains millis from PC start, and millis + 354
+    Connect = 0x0C,
+    
+    /// Server -> Client
+    /// Server sends its time
+    /// Client must respond with packet 0xF (TimeSyncResponse)
+    /// Causes time diff calculation on client
+    TimeSync = 0x0D,
+
+    /// Client -> Server
+    /// Contains some unknown fields derived from global vars
+    TimeSyncResponse = 0x0F,
+    
     /// Server -> Client
     ConnectionError = 0x0E,
     
     /// Server -> Client
+    /// Contains characters and their equipment
     AccountInfo = 0x11,
+
+    /// Client -> Server
+    /// Sent when player enters premium ccode 
+    PremiumCode = 0x1C,
+    
+    /// Server -> Client
+    /// Premium code validtion result
+    PremiumCodeResponse = 0x1D,
+
+    /// Server -> Client
+    /// Sent on startup
+    ServerVars = 0x12,
+
+    /// Server -> Client
+    Packet13 = 0x13,
 
     /// Client -> Server
     /// DLC id
     SteamDlcInstalled = 0x25,
     
     /// Client -> Server
+    /// Issued when user presses "take reward" on char select screen
+    TakeReward = 0x24,
+
+    /// Client -> Server
     /// Steam microtransaction
     /// order id, authorized, 
     SteamMicroTxn = 0x28,
 
-    /// Client -> Server
-    /// Issued when user presses "take reward" on char select screen
-    TakeReward = 0x24,
+    /// Server -> Client
+    /// Inventory state
+    Inventory = 0x38,
 
     /// Client -> Server
     /// Name availability testing, single string
@@ -73,7 +120,7 @@ pub enum PacketType {
 
     /// Server -> Client
     /// Sent when new entity detected nearby
-    Entity = 0x5A,
+    EntityAdd = 0x5A,
     
     /// Server -> Client
     /// Sent when new entity moves
@@ -82,6 +129,10 @@ pub enum PacketType {
     /// Server -> Client
     /// Sent when entity was removed (or disappear?)
     EntityRemove = 0x5E,
+    
+    /// Server -> Client
+    /// Sent when entity was removed (or disappear?)
+    EntityRemove2 = 0x5B,
     
     /// Client -> Server
     /// Move player character
@@ -169,16 +220,26 @@ pub enum PacketType {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Packet {
+    #[brw(magic(0x01u16))]
+    AuthRequest(AuthRequest),
     #[brw(magic(0x02u16))]
     ServerList(ServerList),
     #[brw(magic(0x04u16))]
     Packet04(Packet04),
     #[brw(magic(0x06u16))]
     PinResult(PinResult),
+    #[brw(magic(0x0Cu16))]
+    Connect(Connect),
     #[brw(magic(0x0Du16))]
-    Packet0D(Packet0D),
+    TimeSync(TimeSync),
     #[brw(magic(0x0Eu16))]
     ConnectionError(ConnectionError),
+    #[brw(magic(0x0Fu16))]
+    TimeSyncResponse(TimeSyncResponse),
+    #[brw(magic(0x12u16))]
+    ServerVars(ServerVars),
+    #[brw(magic(0x13u16))]
+    Packet13(Packet13),
     #[brw(magic(0x46u16))]
     HeartbeatClient(HeartbeatClient),
     #[brw(magic(0x47u16))]
@@ -193,6 +254,8 @@ pub enum Packet {
     EntityMove(#[br(parse_with = until_eof)] Vec<EntityMove>),
     #[brw(magic(0x5Eu16))]
     EntityRemove(EntityRemove),
+    #[brw(magic(0x5Bu16))]
+    EntityRemove2(EntityRemove),
     #[brw(magic(0x5Fu16))]
     CharacterMove(CharacterMove),
     #[brw(magic(0x92u16))]
@@ -231,6 +294,58 @@ pub enum Packet {
     Heartbeat2(Heartbeat2),
 }
 
+// Client: packet 0x1 (01) AuthRequest; Length: 175 (0xaf) bytes
+// 0000:   04 51 c5 a7  00 04 ee c3  a7 00 01 10  02 21 00 32   .Q...........!.2
+// 0010:   39 34 31 37  61 61 62 65  38 36 38 34  30 32 62 38   9417aabe868402b8
+// 0020:   31 30 62 61  32 66 34 32  37 34 32 36  35 63 31 00   10ba2f4274265c1.
+// 0030:   02 01 00 00  08 ec 34 af  c1 5c 23 00  00 02 0d 00   ......4..\#.....
+// 0040:   52 53 62 41  65 38 70 62  54 4f 54 48  00 02 01 00   RSbAe8pbTOTH....
+// 0050:   00 03 00 03  00 04 00 00  00 00 02 06  00 36 24 4b   .............6$K
+// 0060:   fe 8c 0e 19  36 02 50 ed  52 12 99 36  00 e0 4b 3c   ....6.P.R..6..K<
+// 0070:   1a b7 36 5e  0c 74 0e fd  14 36 00 00  00 00 00 00   ..6^.t...6......
+// 0080:   36 00 00 00  00 00 00 04  56 af 4b c6  08 56 af 4b   6.......V.K..V.K
+// 0090:   c6 a4 fd 90  cd 02 65 6e  02 01 00 00  02 01 00 00   ......en........
+// 00a0:   02 01 00 00  02 08 00 63  6c 61 73 73  69 63 00      .......classic.
+// parsed: [U32(10995025), U32(10994670), U8(16), "29417aabe868402b810ba2f4274265c1\0", "\0",
+// U64(38881293448428), "RSbAe8pbTOTH\0", "\0", Bool(0), Bool(0), U32(0), U16(6),
+// Op36(2365475620, 6414), Op36(1391284226, 39186), Op36(1011605504, 46874), Op36(242486366, 5373),
+// Op36(0, 0), Op36(0, 0), U32(3326848854), U64(14812618058564874070), U16(28261), "\0", "\0",
+// "\0", "classic\0"]
+// parsed: AuthRequest(AuthRequest { pc_millis_shift: U32(12289203), pc_millis: U32(12288848), auth_type: U8(16), account_id: "29417aabe868402b810ba2f4274265c1\0", unk0: "\0", unk1: U64(38881293448428), sign_in_code: "RSbAe8pbTOTH\0", unk2: "\0", unk3: RBool(0), unk4: RBool(0), unk5: U32(0), unk6: RVec { data: [Op36(2365475620, 6414), Op36(1391284226, 39186), Op36(1011605504, 46874), Op36(242486366, 5373), Op36(0, 0), Op36(0, 0)] }, unk7: U32(3326848854), unk8: U64(14812618058564874070), unk9: U16(28261), unk10: "\0", unk11: "\0", unk12: "\0", gateway: "classic\0" })// 
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthRequest {
+    /// time + 354
+    pub pc_millis_shift: U32,
+    /// Just time
+    pub pc_millis: U32,
+    /// /place base|steam
+    /// 32  - Steam
+    /// 16 - BASE
+    pub auth_type: U8,
+    /// /account-id <string>
+    pub account_id: RString,
+    pub unk0: RString,
+    pub unk1: U64,
+    /// /sign-in-code <string>
+    pub sign_in_code: RString,
+    // all these parameters are stale
+    pub unk2: RString,
+    pub unk3: RBool,
+    pub unk4: RBool,
+    pub unk5: U32,
+    pub unk6: RVec<Op36>,
+    pub unk7: U32,
+    pub unk8: U64,
+    pub unk9: U16,
+    pub unk10: RString,
+    pub unk11: RString,
+    pub unk12: RString,
+    /// /gateway classic
+    pub gateway: RString,
+}
+
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,8 +374,46 @@ pub struct Packet04 {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Packet0D {
+pub struct Connect {
+    /// time + 354
+    pub pc_millis_shift: U32,
+    /// Just time
+    pub pc_millis: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeSync {
     pub unixtime: U64,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeSyncResponse {
+    pub unk0: U32,
+    pub rdtsc: U64,
+    pub unk3: U64,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerVars {
+    /// Game events archive?
+    pub event_info: RZlib,
+    /// Contains char ranges and http|ftp mentions
+    pub some_regex: RZlib,
+    /// "ru"
+    pub mb_region: RString,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Packet13 {
+    pub unk: RZlib,
 }
 
 #[binrw]
@@ -282,6 +435,27 @@ pub struct PinResult {
     pub bool0: RBool,
     /// Maybe OK/CLOSE result
     pub bool1: RBool,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inventory {
+    pub unk0: U8,
+    /// Equals to vec len?
+    pub unk1: U16,
+    // pub items: RVec<ItemDesc>,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemDesc {
+    pub slot: Op25,
+    pub id: U32,
+    pub count: U16,
+    pub flags: U32,
+    // TODO: Next content depends on flags
 }
 
 #[binrw]
@@ -508,14 +682,6 @@ pub struct CompressedData {
     #[br(try_map = |v: Vec<u8>| zlib_decompress(&v))]
     pub blob: Vec<u8>,
     // TODO: Compress
-}
-
-pub fn zlib_decompress(data: &[u8]) -> Result<Vec<u8>, flate2::DecompressError> {
-    let mut out = Vec::with_capacity(131072);
-    let s = flate2::Decompress::new(true)
-        .decompress_vec(data, &mut out, flate2::FlushDecompress::Finish)?;
-    println!("decompress {} bytes: {s:?}", data.len());
-    Ok(out)
 }
 
 #[binrw]

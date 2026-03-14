@@ -73,6 +73,23 @@ pub struct RBytes {
 #[binrw]
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
 #[brw(little)]
+#[debug("{:#?}", self.data.hex_dump())]
+pub struct RZlib {
+    #[bw(calc = U16(data.len() as u16))]
+    #[br(temp)]
+    len: U16,
+    #[br(count = len.0)]
+    /// u16 uncompressed size is probably prepended 
+    /// `yasli`-encoded?
+    /// 0xB1A4C17F - magic
+    #[br(try_map = |v: Vec<u8>| zlib_decompress(&v[2..]))]
+    // TODO: Compress
+    pub data: Vec<u8>
+}
+
+#[binrw]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+#[brw(little)]
 #[debug("{:?}", self.data)]
 pub struct RString {
     #[bw(calc = U16(data.len() as u16))]
@@ -137,6 +154,14 @@ pub enum DataElement {
         cfg
     }))]
     Bytes(#[br(ignore)] Vec<u8>),
+}
+
+pub fn zlib_decompress(data: &[u8]) -> Result<Vec<u8>, flate2::DecompressError> {
+    let mut out = Vec::with_capacity(131072);
+    let s = flate2::Decompress::new(true)
+        .decompress_vec(data, &mut out, flate2::FlushDecompress::Finish)?;
+    println!("decompress {} bytes: {s:?}", data.len());
+    Ok(out)
 }
 
 impl DataElement {

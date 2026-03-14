@@ -16,6 +16,7 @@ const IGNORE: &[PacketType] = &[
 
 const COLLAPSE: &[PacketType] = &[
     PacketType::GuildAvatar,
+    PacketType::ServerVars,
 ];
 
 const ONLY: &[PacketType] = &[
@@ -51,7 +52,7 @@ pub fn ptrace(
 
     println!("--- --- --- --- --- --- --- --- --- --- --- --- --- ---");
     if collapse || data.len() == 2 {
-        println!("{source:?}: packet {ptype:02} ({ptype:#02x}) {sptype}; Length {}", data.len() - 2);
+        println!("{source:?}: packet {ptype:#02X} ({ptype:02}) {sptype}; Length {}", data.len() - 2);
         return;
     }
 
@@ -65,7 +66,7 @@ pub fn ptrace(
             return;
         },
         Ok((packet, offset)) => {
-            println!("{source:?}: packet {ptype:02} ({ptype:#02x}) {sptype}\nparsed: {packet:?}");
+            println!("{source:?}: packet {ptype:#02X} ({ptype:02}) {sptype}\nparsed: {packet:?}");
             let left = &data[offset..];
             if !left.is_empty() {
                 println!("left: {:#?}", left.hex_dump());
@@ -85,7 +86,7 @@ pub fn ptrace(
         // Err(e) => println!("partial parse error: {e}"),
     }
     
-    println!("{source:?}: packet {ptype:02} ({ptype:#02x}) {sptype}; {:#?}", data[2..].hex_dump());
+    println!("{source:?}: packet {ptype:#02X} ({ptype:02}) {sptype}; {:#?}", data[2..].hex_dump());
     let res = crate::rqode_binrw::read_guess_all(Cursor::new(&data[2..]));
     match res {
         Ok(p) => println!("parsed: {p:?}"),

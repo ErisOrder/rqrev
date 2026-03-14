@@ -164,7 +164,7 @@ impl Mitm {
         
         match &mut self.cipher_state {
             CipherS::Uninit => {
-                println!("--> hand: {:#?}", data.hex_dump());
+                println!("--> hand");
                 
                 // Expect game pubkey
                 if data.len() == 132 {
@@ -221,7 +221,7 @@ impl Mitm {
         match &mut self.cipher_state {
             CipherS::Uninit => bail!("unexpected server message"),
             CipherS::ClientHandshakeReceived { my_pk, game_pubk } => {
-                println!("<-- hand_raw: {:#?}", data.hex_dump());
+                println!("<-- hand_raw");
                 
                 // Expect server handshake
                 if data.len() == 640 {
@@ -239,7 +239,7 @@ impl Mitm {
                         plaintext.extend_from_slice(&dec);
                     }
 
-                    println!("<-- hand_decoded: {:#?}", plaintext.hex_dump());
+                    println!("<-- hand_decoded");
                     
                     // Import boxes 
                     let srv_rx = CustomRc4::from_bytes(&plaintext[..264]);
