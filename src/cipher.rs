@@ -1,11 +1,11 @@
-use std::collections::VecDeque;
-
 use anyhow::{Result, bail};
 use pretty_hex::PrettyHex;
 use ringbuf::{HeapRb, traits::{Consumer, Observer, Producer}};
 use rsa::{BigUint, RsaPrivateKey, RsaPublicKey, rand_core::OsRng, traits::PublicKeyParts};
+use tracing::debug;
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct CustomRc4 {
     s: [u8; 256],
     i: u8,
@@ -29,8 +29,12 @@ impl CustomRc4 {
         }
     }
 
-    pub fn as_bytes(&mut self) -> &mut [u8; 264] {
-        unsafe { core::mem::transmute(self) }
+    pub fn to_bytes(&self) -> [u8; 264] {
+        let mut out = [0u8; 264];
+        out[..256].copy_from_slice(&self.s);
+        out[256..260].copy_from_slice(&(self.i as u32).to_le_bytes());
+        out[260..264].copy_from_slice(&(self.j as u32).to_le_bytes());
+        out
     }
 
     /// Internal XOR core (used by both encrypt and decrypt)
@@ -140,7 +144,7 @@ pub enum PacketSource {
     Server,
 }
 
-pub type MitmCallback = Box<dyn FnMut(PacketSource, u16, &mut [u8]) + Send>;
+pub type MitmCallback = Box<dyn FnMut(PacketSource, u16, &[u8]) + Send>;
 
 impl Mitm {
     pub fn new(
@@ -164,14 +168,11 @@ impl Mitm {
         
         match &mut self.cipher_state {
             CipherS::Uninit => {
-                println!("--> hand");
-                
                 // Expect game pubkey
                 if data.len() == 132 {
-                    let n = BigUint::from_bytes_le(&data[..128]);
-                    let e = BigUint::from_bytes_le(&data[128..132]);
-        
-                    let game_pubk = rsa::RsaPublicKey::new(n, e)?;
+                    debug!("received client pubkey");
+                    
+                    let game_pubk = read_game_pubkey(data)?;
                     let my_pk = rsa::RsaPrivateKey::new(&mut OsRng, 1015)?;
                     
                     // Prepare our pubkey for game
@@ -221,10 +222,10 @@ impl Mitm {
         match &mut self.cipher_state {
             CipherS::Uninit => bail!("unexpected server message"),
             CipherS::ClientHandshakeReceived { my_pk, game_pubk } => {
-                println!("<-- hand_raw");
-                
                 // Expect server handshake
                 if data.len() == 640 {
+                    debug!("received server RC4 boxes");
+                    
                     let mut plaintext = vec![];
         
                     let mut data = data.to_vec();
@@ -239,27 +240,13 @@ impl Mitm {
                         plaintext.extend_from_slice(&dec);
                     }
 
-                    println!("<-- hand_decoded");
+                    debug!("server RC4 boxes decoded");
                     
                     // Import boxes 
                     let srv_rx = CustomRc4::from_bytes(&plaintext[..264]);
                     let srv_tx = CustomRc4::from_bytes(&plaintext[264..528]);
 
-                    // Create boxes for client
-                    let mut game_rx = CustomRc4::new();
-                    let mut game_tx = CustomRc4::new();
-                    // game_rx.setup_rand();
-                    // game_tx.setup_rand();
-                    let mut unprep_game_rx = game_rx.clone();
-                    // Apply transform to our box; same transform will be applied by client
-                    modulus_transform(game_rx.as_bytes())?;
-
-                    // Prepare message for client
-                    let mut out = vec![0; 640];
-                    out[..264].copy_from_slice(unprep_game_rx.as_bytes());
-                    out[264..528].copy_from_slice(game_tx.as_bytes());
-                    // TODO: Is this just junk?
-                    out[528..640].fill(0);
+                    let (game_rx, game_tx, out) = prepare_rc4_boxes();
 
                     self.cipher_state = CipherS::EncryptedChannel { game_rx, game_tx, srv_rx, srv_tx };
 
@@ -328,6 +315,38 @@ impl Mitm {
         
         out
     }
+}
+
+pub fn read_game_pubkey(data: &[u8]) -> Result<rsa::RsaPublicKey> {
+    let n = BigUint::from_bytes_le(&data[..128]);
+    let e = BigUint::from_bytes_le(&data[128..132]);
+
+    let game_pubk = rsa::RsaPublicKey::new(n, e)?;
+    Ok(game_pubk)
+}
+
+/// RX, TX, data for game
+pub fn prepare_rc4_boxes() -> (CustomRc4, CustomRc4, Vec<u8>) {
+    let mut out = vec![0; 640];
+    
+    // Create boxes for client
+    let game_rx = CustomRc4::new();
+    let game_tx = CustomRc4::new();
+    // game_rx.setup_rand();
+    // game_tx.setup_rand();
+
+    // Prepare message for client
+    out[..264].copy_from_slice(&game_rx.to_bytes());
+    out[264..528].copy_from_slice(&game_tx.to_bytes());
+    // TODO: Is this just junk?
+    out[528..640].fill(0);
+    
+    // Apply transform to our box; same transform will be applied by client   
+    let mut temp = game_rx.to_bytes();
+    modulus_transform(&mut temp).unwrap();
+    let game_rx = CustomRc4::from_bytes(&temp);
+
+    (game_rx, game_tx, out)
 }
 
 pub fn modulus_transform(data: &mut [u8]) -> Result<()> {

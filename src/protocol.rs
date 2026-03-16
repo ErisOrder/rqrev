@@ -8,6 +8,8 @@
 //! strings and byte arrays are not distinguished easily,
 //! they are represented as U16 len, variable data
 
+use std::net::Ipv4Addr;
+
 use binrw::{BinRead, BinResult, binrw, helpers::until_eof};
 use pretty_hex::PrettyHex;
 use crate::rqode_binrw::*;
@@ -79,6 +81,10 @@ pub enum PacketType {
     Packet13 = 0x13,
 
     /// Client -> Server
+    /// Seems to be related to obfuscated? error reporting
+    Packet16 = 0x16,
+
+    /// Client -> Server
     /// DLC id
     SteamDlcInstalled = 0x25,
     
@@ -139,8 +145,8 @@ pub enum PacketType {
     CharacterMove = 0x5F,
     
     /// Client -> Server
-    /// Sent when player attacks entity
-    Attck = 0x92,
+    /// Sent when player attacks entity, heals, takes food, etc
+    UseAbility = 0x92,
     
     /// Client -> Server
     /// Sent when player wants to pickup dropped item
@@ -154,10 +160,17 @@ pub enum PacketType {
     EntityDeath = 0xA4,
 
     /// Server -> Client
-    /// Sent when entity dies and player receives experience
-    /// And gold?
-    /// Works in both directions?
+    /// Sent when entity dies and player receives/gives currency
+    /// Seems to only be used to display lines in battle log
     CurrencyDiff = 0xAE,
+
+    // /// Server -> Client
+    // /// Update quest info
+    // QuestUpdate = 0xAB,
+
+    /// Server -> Client
+    /// Current level experience amount
+    ExperienceAmount = 0xAF,
 
     /// Server -> Client
     /// Sent when character stat gets updated
@@ -236,10 +249,14 @@ pub enum Packet {
     ConnectionError(ConnectionError),
     #[brw(magic(0x0Fu16))]
     TimeSyncResponse(TimeSyncResponse),
+    #[brw(magic(0x11u16))]
+    CharList(CharList),
     #[brw(magic(0x12u16))]
     ServerVars(ServerVars),
     #[brw(magic(0x13u16))]
     Packet13(Packet13),
+    #[brw(magic(0x16u16))]
+    Packet16(Packet16),
     #[brw(magic(0x46u16))]
     HeartbeatClient(HeartbeatClient),
     #[brw(magic(0x47u16))]
@@ -259,17 +276,19 @@ pub enum Packet {
     #[brw(magic(0x5Fu16))]
     CharacterMove(CharacterMove),
     #[brw(magic(0x92u16))]
-    Attack(Attack),
+    UseAbility(UseAbility),
     #[brw(magic(0x95u16))]
     PickupRequest(PickupRequest),
     #[brw(magic(0x9Cu16))]
     DealtDamage(DealtDamage),
     #[brw(magic(0xA4u16))]
     EntityDeath(EntityDeath),
-    #[brw(magic(0xAEu16))]
-    CurrencyDiff(CurrencyDiff),
     #[brw(magic(0xA7u16))]
     StatUpdate(StatUpdate),
+    #[brw(magic(0xAEu16))]
+    CurrencyDiff(CurrencyDiff),
+    #[brw(magic(0xAFu16))]
+    ExperienceAmount(ExperienceAmount),
     #[brw(magic(0xBBu16))]
     MoveItemRequest(MoveItem),
     #[brw(magic(0xBEu16))]
@@ -327,7 +346,7 @@ pub struct AuthRequest {
     /// /account-id <string>
     pub account_id: RString,
     pub unk0: RString,
-    pub unk1: U64,
+    pub rdtsc: U64,
     /// /sign-in-code <string>
     pub sign_in_code: RString,
     // all these parameters are stale
@@ -346,21 +365,51 @@ pub struct AuthRequest {
     pub gateway: RString,
 }
 
+    
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerList {
-    servers: RVec<ServerDesc>,
-    // TODO: ...rest
+    pub servers: RVec<ServerDesc>,
+    pub unk1: RVec<U16>,
+    pub unk2: RVec<U16>,
+    pub endpoints: RVec<EndpointDesc>,
+    pub unk4: U32,
+    pub unk5: RBool,
+    pub unk6: U32,
+    pub unixtime: U64,
+    pub unk8: U32,
+    pub mb_selected_server_id: U16,
+    pub unk10: U64,
+    pub unk11: RBytes,
+    pub unk12: U32,
+    // These 2 seems to be used as some session key
+    pub xkey0: U32,
+    pub xkey1: U64,
+    // And rdtsc as validation?
+    pub rdtsc_echo: U64,
+    pub unk16: RString,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub struct EndpointDesc {
+    pub server_id: U16,
+    #[br(map = |v: U32| core::net::Ipv4Addr::from_bits(v.0))]
+    #[bw(map = |v| U32(v.to_bits()))]
+    pub ip: Ipv4Addr,
+    pub port: U16,
+    pub unk3: U16,
 }
 
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerDesc {
-    unk0: U16,
-    name: RString,
-    unk1: U32,
+    pub id: U16,
+    pub name: RString,
+    pub unk1: U32,
 }
 
 #[binrw]
@@ -381,6 +430,7 @@ pub struct Connect {
     pub pc_millis: U32,
 }
 
+
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -392,9 +442,62 @@ pub struct TimeSync {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimeSyncResponse {
-    pub unk0: U32,
+    pub xkey0: U32,
     pub rdtsc: U64,
-    pub unk3: U64,
+    pub xkey1: U64,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharList {
+    pub xkey0: U32,
+    /// Same as ServerList.unk10
+    pub unk1: U64,
+    pub unk2: U32,
+    pub some_flags: U32,
+    /// Global variable in client
+    pub unk4: U32,
+    pub rdtsc_echo: U64,
+    pub unk5: RString,
+    
+    pub unk6: U32,
+    
+    pub chars: RVec<CharacterSlot>,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterSlot {
+    pub id: U32,
+    /// Slot is empty if id is 0
+    #[br(if(id.0 != 0))]
+    pub info: Option<CharacterInfo>,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterInfo {
+    /// 1 - warrior
+    /// 2 - mage
+    /// 3 - archer
+    /// 4 - thief
+    pub class: U16,
+    /// 0 - male
+    /// 1 - female
+    pub sex: RBool,
+    pub level: U16,
+    pub unk3: U32,
+    pub hp: U32,
+    pub mp: U32,
+    pub location_id: U32,
+    pub body: BodyParam,
+    pub name: RString,
+    pub unk9: U8,
+    pub unk10: U64,
+    pub equip: RVec<ItemDesc>
 }
 
 #[binrw]
@@ -414,6 +517,18 @@ pub struct ServerVars {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet13 {
     pub unk: RZlib,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Packet16 {
+    pub rdtsc0: U64,
+    pub unk1: U64,
+    pub rdtsc1: U64,
+    // Same as TimeSyncResponse.unk3
+    pub unk2: U64,
+    pub unk3: RString,  
 }
 
 #[binrw]
@@ -447,15 +562,47 @@ pub struct Inventory {
     // pub items: RVec<ItemDesc>,
 }
 
+// Server: packet 0xC1 (193) ReceiveItem
+// parsed: ReceiveItem(ReceiveItem { unk0: U8(7), item: ItemDesc { slot: InvSlot { idx: 0, unk1: 0, tab: 0, inv: 2 }, id: U32(2341), count: U16(1), flags: U32(163840) } })
+// left: Length: 34 (0x22) bytes
+// 0000:   04 00 00 00  00 04 00 00  00 00 04 00  00 00 00 02   ................
+// 0010:   00 00 01 00  01 00 04 00  00 00 00 01  00 04 00 00   ................
+// 0020:   00 00                                                ..
+// parsed: [U32(0), U32(0), U32(0), U16(0), U8(0), U8(0), U32(0), U8(0), U32(0)]
 #[binrw]
 #[brw(little)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
 pub struct ItemDesc {
-    pub slot: Op25,
+    pub slot: InvSlot,
     pub id: U32,
     pub count: U16,
+    #[debug("{:#x}", flags.0)]
     pub flags: U32,
-    // TODO: Next content depends on flags
+
+    #[br(if(flags.0 & 0x1000 != 0))]
+    pub unk5: Option<U32>,
+    
+    #[br(if(flags.0 & 0x2000 != 0))]
+    pub unk6: Option<U64>,
+
+    #[br(if(flags.0 & 0x8000 != 0))]
+    pub ext: Option<ItemDescExt>,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub struct ItemDescExt {
+    /// 1992 is special
+    pub unk0: U32,
+    pub unk1: U32,
+    pub unk2: U32,
+    pub unk3: U16,
+    pub unk4: U8,
+    pub unk5: U8,
+    pub unk6: U32,
+    pub unk7: U8,
+    pub unk8: U32,
 }
 
 #[binrw]
@@ -517,7 +664,7 @@ pub struct EntityMove {
     pub x: F32,
     pub y: F32,
     pub unk12: U16,
-    #[debug("{:b}", flags.0)]
+    #[debug("{:#x}", flags.0)]
     pub flags: U16,
     pub unk16: U16,
 }
@@ -558,13 +705,13 @@ pub struct UpdateBalance {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Attack {
+pub struct UseAbility {
     pub target_id: U32,
-    pub unk4: U16,
-    pub unk8: Op25,
+    pub skill_id: U16,
+    pub used_item: InvSlot,
     pub unk10: U8,
-    pub unk11: [F32; 2],
-    pub unk12: [F32; 2],
+    pub pos0: [F32; 2],
+    pub pos1: [F32; 2],
     pub unk13: U32,
 }
 
@@ -622,6 +769,13 @@ pub struct StatUpdate {
     pub unk: F32,
 }
 
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExperienceAmount {
+    pub value: U32,
+}
+
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- move item request, slot #8 -> #20
 // Client: packet 187 (0xbb) ; Length: 10 (0xa) bytes
 // 0000:   25 08 00 02  02 25 14 00  02 02                      %....%....
@@ -634,8 +788,8 @@ pub struct StatUpdate {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveItem {
-    pub from: Op25,
-    pub to: Op25,
+    pub from: InvSlot,
+    pub to: InvSlot,
 }
 
 // parsed: [U8(3), Op25([3, 0, 2, 2]), U32(1621), U16(1), U32(4096)]
@@ -644,11 +798,7 @@ pub struct MoveItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiveItem {
     pub unk0: U8,
-    pub slot: Op25,
-    pub id: U32,
-    pub quant: U16,
-    /// Probably bitflags
-    pub unk1: U32,
+    pub item: ItemDesc,
 }
 
 #[binrw]
@@ -663,7 +813,7 @@ pub struct BuyItemRequest {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SellItemRequest {
-    pub slot: Op25,
+    pub slot: InvSlot,
 }
 
 #[binrw]

@@ -26,7 +26,7 @@ const ONLY: &[PacketType] = &[
 pub fn ptrace(
     source: PacketSource,
     ptype: u16,
-    data: &mut [u8],
+    data: &[u8],
 ) {
     let sptype = PacketType::try_from_primitive(ptype);
 

@@ -1,38 +1,63 @@
 #![feature(seek_stream_len)]
 
+use clap::Parser;
 use fast_socks5::{
     ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, states::CommandRead}, util::target_addr::TargetAddr
 };
 use pretty_hex::PrettyHex;
-use std::{future::Future, time::Duration};
+use tracing::info;
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use tokio::task;
 // use pretty_hex::PrettyHex;
 
-use crate::cipher::Mitm;
+use crate::{cipher::Mitm, server::Server};
 
 pub mod cipher;
 pub mod protocol;
 pub mod rqode;
 pub mod ptrace;
 pub mod rqode_binrw;
+pub mod server;
+
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum Mode {
+    Server,
+    Mitm
+}
+
+#[derive(clap::Parser)]
+struct Cli {
+    mode: Mode,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+    
     spawn_socks_server().await
 }
 
 async fn spawn_socks_server() -> Result<()> {
+    let args = Cli::parse();
+
     let listener = TcpListener::bind("127.0.0.1:8008").await?;
 
-    println!("Listen for socks connections");
+    info!("Listen for socks connections");
 
+    let server = match args.mode {
+        Mode::Server => Some(Arc::new(Server::init())),
+        Mode::Mitm => None,
+    };
+    
     // Standard TCP loop
     loop {
         match listener.accept().await {
             Ok((socket, _client_addr)) => {
                 println!("SOCKS connect from {_client_addr}");
-                spawn_and_log_error(serve_socks5(socket));
+                spawn_and_log_error(serve_socks5(server.clone(), socket));
             }
             Err(err) => {
                 println!("accept error = {:?}", err);
@@ -41,7 +66,7 @@ async fn spawn_socks_server() -> Result<()> {
     }
 }
 
-async fn serve_socks5(socket: tokio::net::TcpStream) -> Result<(), SocksError> {
+async fn serve_socks5(server: Option<Arc<Server>>, socket: tokio::net::TcpStream) -> Result<(), SocksError> {
     let (proto, cmd, target_addr) = Socks5ServerProtocol::accept_no_auth(socket).await?
         .read_command()
         .await?
@@ -51,13 +76,16 @@ async fn serve_socks5(socket: tokio::net::TcpStream) -> Result<(), SocksError> {
     match cmd {
         Socks5Command::TCPConnect => {
             println!("Connect to {}", target_addr);
-            spawn_and_log_error(serve_tcp(proto, target_addr));
-            // run_tcp_proxy(proto, &target_addr, Duration::from_secs(60), false).await?;
+            match &server {
+                None => {
+                    spawn_and_log_error(do_mitm(proto, target_addr));
+                },
+                Some(s) => {
+                    let conn = proto.reply_success("127.0.0.1:0".parse().unwrap()).await?;
+                    s.add_connection(conn);
+                },
+            };
         }
-        // Socks5Command::UDPAssociate if opt.allow_udp => {
-        //     let reply_ip = opt.public_addr.context("invalid reply ip")?;
-        //     run_udp_proxy(proto, &target_addr, None, reply_ip, None).await?;
-        // }
         _ => {
             proto.reply_error(&ReplyError::CommandNotSupported).await?;
             return Err(ReplyError::CommandNotSupported.into());
@@ -78,7 +106,7 @@ where
     })
 }
 
-async fn serve_tcp(
+async fn do_mitm(
     proto: Socks5ServerProtocol<TcpStream, CommandRead>,
     addr: TargetAddr,
 ) -> Result<()> {

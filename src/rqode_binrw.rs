@@ -34,10 +34,20 @@ impl Eq for F32 {}
 #[brw(little, magic = 0x08u8)]
 pub struct U64(pub u64);
 
+/// u32 haircolor | u32 skin | u16 unk | u16 face | u16 unk | u16 unk
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
 #[brw(little, magic = 0x1Du8)]
-pub struct Op1D(pub [u32; 4]);
+pub struct BodyParam {
+    pub haircolor: u16,
+    pub unk1: u16,
+    pub skin: u16,
+    pub unk3: u16,
+    pub unk4: u16,
+    pub face: u16,
+    pub unk6: u16,
+    pub unk7: u16,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
@@ -47,7 +57,18 @@ pub struct Op21(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
 #[brw(little, magic = 0x25u8)]
-pub struct Op25(pub [u8; 4]);
+pub struct InvSlot{
+    pub idx: u8,
+    /// Part of u16 index?
+    pub unk1: u8, 
+    /// Inventory tab
+    pub tab: u8,
+    /// Inventory
+    /// 0 - trash
+    /// 1 - equipment
+    /// 2 - main inventory
+    pub inv: u8, 
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
@@ -68,6 +89,12 @@ pub struct RBytes {
     len: U16,
     #[br(count = len.0)]
     pub data: Vec<u8>
+}
+
+impl<T: AsRef<[u8]>> From<T> for RBytes {
+    fn from(value: T) -> Self {
+        RBytes { data: Vec::from(value.as_ref()) }
+    }
 }
 
 #[binrw]
@@ -101,6 +128,24 @@ pub struct RString {
     pub data: String,
 }
 
+impl RString {
+    pub fn empty() -> Self {
+        Self {
+            data: String::from("\0")
+        }
+    }
+}
+
+impl<T: ToString> From<T> for RString {
+    fn from(value: T) -> Self {
+        let mut s = value.to_string();
+        s.push('\0');
+        RString {
+            data: s,
+        }
+    }
+}
+
 #[binrw]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[brw(little)]
@@ -114,6 +159,14 @@ where T: for<'a> BinRead<Args<'a> = ()> + for<'a> BinWrite<Args<'a> = ()> + 'sta
     #[br(count = len.0)]
     pub data: Vec<T>,
 }
+
+impl<T> From<Vec<T>> for RVec<T>
+where T: for<'a> BinRead<Args<'a> = ()> + for<'a> BinWrite<Args<'a> = ()> + 'static
+{
+    fn from(value: Vec<T>) -> Self {
+        Self { data: value }
+    }
+} 
 
 #[derive(derive_more::Debug, Clone, PartialEq, Eq, derive_more::TryUnwrap)]
 #[binread]
@@ -132,11 +185,11 @@ pub enum DataElement {
     #[debug("F32({})", _0.0)]
     F32(F32),
     #[debug("{:?}", _0)]
-    Op1D(Op1D),
+    Op1D(BodyParam),
     #[debug("{:?}", _0)]
     Op21(Op21),
     #[debug("{:?}", _0)]
-    Op25(Op25),
+    Op25(InvSlot),
     #[debug("{:?}", _0)]
     Op36(Op36),
     #[debug("{:?}", _0)]
