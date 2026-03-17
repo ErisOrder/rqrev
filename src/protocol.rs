@@ -97,9 +97,15 @@ pub enum PacketType {
     /// order id, authorized, 
     SteamMicroTxn = 0x28,
 
+    /// Client -> Server
+    EnterWorldRequest = 0x34,
+
     /// Server -> Client
     /// Inventory state
     Inventory = 0x38,
+    
+    /// Server -> Client
+    EnterWorldResponse = 0x39,
 
     /// Client -> Server
     /// Name availability testing, single string
@@ -119,6 +125,10 @@ pub enum PacketType {
     /// Server -> Client
     /// Sent when player balance (at least gold) updated
     UpdateBalance = 0x52,
+
+    /// Server -> Client
+    /// Sent when player enter game world
+    SwitchLocation = 0x53,
     
     /// Cleint -> Server
     /// another connection close, no data
@@ -143,6 +153,10 @@ pub enum PacketType {
     /// Client -> Server
     /// Move player character
     CharacterMove = 0x5F,
+
+    /// Server -> Client
+    /// Contains character location and camera parameters
+    PosCamera = 0x64,
     
     /// Client -> Server
     /// Sent when player attacks entity, heals, takes food, etc
@@ -227,6 +241,12 @@ pub enum PacketType {
     /// Both directions
     /// Client initiates and server echoes some timestamp
     Heartbeat2 = 0x199,
+
+    /// Client -> Server
+    ExitRequest = 0x1D4,
+
+    /// Server -> Client
+    ExitResponse = 0x1D5,
 }
 
 #[binrw]
@@ -257,6 +277,12 @@ pub enum Packet {
     Packet13(Packet13),
     #[brw(magic(0x16u16))]
     Packet16(Packet16),
+    #[brw(magic(0x34u16))]
+    EnterWorldRequest(EnterWorldRequest),
+    #[brw(magic(0x38u16))]
+    Inventory(Inventory),
+    #[brw(magic(0x39u16))]
+    EnterWorldResponse(EnterWorldResponse),
     #[brw(magic(0x46u16))]
     HeartbeatClient(HeartbeatClient),
     #[brw(magic(0x47u16))]
@@ -265,6 +291,10 @@ pub enum Packet {
     ChatMessage(ChatMessage),
     #[brw(magic(0x52u16))]
     UpdateBalance(UpdateBalance),
+    #[brw(magic(0x53u16))]
+    SwitchLocation(SwitchLocation),
+    #[brw(magic(0x56u16))]
+    ConnectionClose2(),
     #[brw(magic(0x5Au16))]
     Entity(Entity),
     #[brw(magic(0x5Cu16))]
@@ -275,6 +305,8 @@ pub enum Packet {
     EntityRemove2(EntityRemove),
     #[brw(magic(0x5Fu16))]
     CharacterMove(CharacterMove),
+    #[brw(magic(0x64u16))]
+    PosCamera(PosCamera),
     #[brw(magic(0x92u16))]
     UseAbility(UseAbility),
     #[brw(magic(0x95u16))]
@@ -311,6 +343,10 @@ pub enum Packet {
     ShowEmotion(ShowEmotion),
     #[brw(magic(0x199u16))]
     Heartbeat2(Heartbeat2),
+    #[brw(magic(0x1D4u16))]
+    ExitRequest(ExitRequest),
+    #[brw(magic(0x1D5u16))]
+    ExitResponse(ExitResponse),
 }
 
 // Client: packet 0x1 (01) AuthRequest; Length: 175 (0xaf) bytes
@@ -550,6 +586,21 @@ pub struct PinResult {
     pub bool0: RBool,
     /// Maybe OK/CLOSE result
     pub bool1: RBool,
+    
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnterWorldRequest {
+    pub char_idx: U8,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnterWorldResponse {
+    pub unk: U16,
 }
 
 #[binrw]
@@ -559,7 +610,7 @@ pub struct Inventory {
     pub unk0: U8,
     /// Equals to vec len?
     pub unk1: U16,
-    // pub items: RVec<ItemDesc>,
+    pub items: RVec<ItemDesc>,
 }
 
 // Server: packet 0xC1 (193) ReceiveItem
@@ -579,7 +630,9 @@ pub struct ItemDesc {
     #[debug("{:#x}", flags.0)]
     pub flags: U32,
 
-    #[br(if(flags.0 & 0x1000 != 0))]
+    // FIXME: Something wrong here
+    // #[br(if(flags.0 & 0x1000 != 0))]
+    #[br(default)]
     pub unk5: Option<U32>,
     
     #[br(if(flags.0 & 0x2000 != 0))]
@@ -695,6 +748,70 @@ pub struct UpdateBalance {
     pub currency: U8,
     pub balance: U64,
 }
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchLocation {
+    pub location_id: U32,
+    pub unk1: U32,
+}
+
+// Server: packet 0x64 (100) ; Length: 126 (0x7e) bytes
+// 0000:   04 00 00 00  00 05 e7 91  02 43 05 2f  8b d9 42 05   .........C./..B.
+// 0010:   aa 66 7b bf  01 00 05 00  00 a0 40 02  05 00 02 3b   .f{.......@....;
+// 0020:   0a 04 45 4f  49 b7 04 00  00 00 00 01  02 02 02 01   ..EOI...........
+// 0030:   01 02 02 21  04 02 25 08  04 45 4f 49  b7 04 00 00   ...!..%..EOI....
+// 0040:   00 00 01 00  01 00 02 ca  04 04 45 4f  49 b7 04 00   ..........EOI...
+// 0050:   00 00 00 01  00 01 03 05  9a 99 61 42  02 99 07 04   ..........aB....
+// 0060:   45 4f 49 b7  04 00 00 00  00 01 00 01  00 02 6a 0a   EOI...........j.
+// 0070:   04 45 4f 49  b7 04 b8 0b  00 00 01 00  01 00         .EOI..........
+// parsed: [U32(0), F32(130.56993), F32(108.77184), F32(-0.9820353), U8(0), F32(5), U16(5),
+// U16(2619), U32(3075034949), U32(0), U8(2), U16(258), U8(2), U16(1057),
+// U16(2085), U32(3075034949), U32(0), U8(0), U8(0),
+// U16(1226), U32(3075034949), U32(0), U8(0), U8(3), F32(56.4),
+// U16(1945), U32(3075034949), U32(0), U8(0), U8(0),
+// U16(2666), U32(3075034949), U32(3000), U8(0), U8(0)]
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PosCamera {
+    pub unk0: U32,
+    pub x: F32,
+    pub y: F32,
+    pub rot: F32,
+    pub unk4: U8,
+    /// Need for movement to work
+    pub unk5: F32,
+    
+    pub effects: RVec<CameraEffect>,    
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraEffect {
+    pub id: U16,
+    pub player_id: U32,
+    // MB related to duration
+    pub unk2: U32,
+    // value stream: meta-op: U8(0) = skip, U8(2) = U16, U8(3) = F32
+    pub vstream: (),
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrefixedValue {
+    pub prefix: U8,
+    #[br(if(prefix.0 == 1))]
+    pub u8: Option<U8>,
+    #[br(if(prefix.0 == 2))]
+    pub u16: Option<U16>,
+    #[br(if(prefix.0 == 3))]
+    pub f32: Option<F32>,
+}
+
 
 // Client: packet 146 (0x92) ; Length: 40 (0x28) bytes
 // 0000:   04 8c c2 eb  8b 02 08 00  25 00 00 00  00 01 ff 05   ........%.......
@@ -858,5 +975,23 @@ pub struct StatUpdateRequest {
 pub struct Heartbeat2 {
     /// Probably, milliseconds
     pub client_uptime: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExitRequest {
+    /// Exit type:
+    /// 0 - to character selection
+    /// 1 - to main menu
+    /// 2 - exit game
+    pub code: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExitResponse {
+    pub unk: U32,
 }
 

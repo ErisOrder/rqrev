@@ -3,7 +3,7 @@ use std::io::Cursor;
 use num_enum::TryFromPrimitive;
 use pretty_hex::PrettyHex;
 
-use crate::{cipher::PacketSource, protocol::{Packet, PacketType}, rqode_binrw::BinReadChecked};
+use crate::{mitm::PacketSource, protocol::{Packet, PacketType}, rqode_binrw::BinReadChecked};
 
 const IGNORE: &[PacketType] = &[
     PacketType::HeartbeatClient,

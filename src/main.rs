@@ -11,14 +11,14 @@ use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use tokio::task;
 // use pretty_hex::PrettyHex;
 
-use crate::{cipher::Mitm, server::Server};
+use crate::{mitm::Mitm, server::Server};
 
 pub mod cipher;
 pub mod protocol;
-pub mod rqode;
 pub mod ptrace;
 pub mod rqode_binrw;
 pub mod server;
+pub mod mitm;
 
 #[derive(clap::ValueEnum, Clone, Copy)]
 enum Mode {
@@ -135,7 +135,7 @@ async fn do_mitm(
     let mut rbuf = vec![0; 0xFFFF];
     let mut wbuf = vec![0; 0xFFFF];
 
-    let mut state = Mitm::new(false, Box::new(ptrace::ptrace));
+    let mut state = Mitm::new(false);
 
     loop {
         tokio::select! {
@@ -150,6 +150,9 @@ async fn do_mitm(
                 let data = state.process_server_data(&rbuf[..len])?;
                 // tokio::time::sleep(Duration::from_millis(300)).await;
                 // println!("<-- mitm: {:#?}", &data.hex_dump());
+                if data.is_empty() {
+                    continue;
+                }
                 
                 socks.write_all(&data).await?;
             },
@@ -164,6 +167,10 @@ async fn do_mitm(
                 let data = state.process_game_data(&wbuf[..len])?;
                 // tokio::time::sleep(Duration::from_millis(300)).await;
                 // println!("--> mitm: {:#?}", &data.hex_dump());
+
+                if data.is_empty() {
+                    continue;
+                }
 
                 sock.write_all(&data).await?;
             }

@@ -2,13 +2,14 @@ use std::{io::{Cursor, Seek, SeekFrom}, sync::Arc};
 
 use num_enum::TryFromPrimitive;
 use pretty_hex::PrettyHex;
-use ringbuf::{HeapRb, storage::Heap, traits::{Consumer, Observer, Producer}};
+use ringbuf::{HeapRb, traits::{Consumer, Observer, Producer}};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
 use tracing::{debug, error, info, trace, warn};
 
 use binrw::{BinRead, BinWrite};
 
-use crate::{cipher::{CustomRc4, PacketSource, prepare_rc4_boxes, read_game_pubkey}, protocol::*, ptrace::ptrace, rqode_binrw::BinReadChecked};
+use crate::{cipher::{CustomRc4, prepare_rc4_boxes, read_game_pubkey}, protocol::*, ptrace::ptrace, rqode_binrw::BinReadChecked};
+use crate::mitm::PacketSource;
 use crate::rqode_binrw::*;
 
 pub struct State {
@@ -293,9 +294,6 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
                 ]),
             });
             out.push(PacketOrBlob::Packet(p));
-            // out.push(PacketOrBlob::Blob(
-            //     include_bytes!("../../captures/blobs/p17.bin")
-            // ));
         },
         Packet::HeartbeatClient(p) => {
             out.push(PacketOrBlob::Packet(Packet::HeartbeatServer(HeartbeatServer {
@@ -303,18 +301,77 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
                 time: U32(0),
             })));
         },
+        Packet::EnterWorldRequest(p) => {
+            out.push(PacketOrBlob::Packet(Packet::EnterWorldResponse(EnterWorldResponse {
+                unk: U16(0),
+            })));
+            out.push(PacketOrBlob::Packet(Packet::Inventory(Inventory{
+                unk0: U8(1),
+                unk1: U16(1),
+                items: RVec::from(vec![
+                    ItemDesc {
+                        // Chest armor
+                        slot: InvSlot { idx: 3, unk1: 0, tab: 0, inv: 1 },
+                        id: U32(5143),
+                        count: U16(1),
+                        flags: U32(0x0000),
+                        unk5: None,
+                        unk6: None,
+                        ext: None
+                    }
+                ])
+            })));
+            // Game crashes without this packet
+            // Certainly contains character info
+            out.push(PacketOrBlob::Blob(
+                include_bytes!("../../captures/blobs/p51.bin")
+            ));
+            out.push(PacketOrBlob::Packet(Packet::SwitchLocation(SwitchLocation {
+                location_id: U32(25565),
+                unk1: U32(0),
+            })));
+            out.push(PacketOrBlob::Packet(Packet::PosCamera(PosCamera {
+                unk0: U32(0),
+                x: F32(130.0),
+                y: F32(108.0),
+                rot: F32(0.0),
+                unk4: U8(0),
+                unk5: F32(5.0),
+                effects: RVec::from(vec![]),
+            })));
+        }
         // Packet::ChatMessage(chat_message) => todo!(),
         // Packet::CharacterMove(character_move) => todo!(),
         // Packet::Attack(attack) => todo!(),
         // Packet::PickupRequest(pickup_request) => todo!(),
-        // Packet::MoveItemRequest(move_item) => todo!(),
+        Packet::MoveItemRequest(p) => {
+            out.push(PacketOrBlob::Packet(Packet::MoveItemResponse(
+                p.clone()
+            )));
+        },
         // Packet::StatUpdateRequest(stat_update_request) => todo!(),
         // Packet::BuyItemRequest(buy_item_request) => todo!(),
         // Packet::SellItemRequest(sell_item_request) => todo!(),
         // Packet::BuyBackRequest(buy_back) => todo!(),
         // Packet::CompressedData(compressed_data) => todo!(),
         // Packet::ShowEmotion(show_emotion) => todo!(),
-        // Packet::Heartbeat2(heartbeat2) => todo!(),
+        Packet::Heartbeat2(p) => {
+            out.push(PacketOrBlob::Packet(Packet::Heartbeat2(Heartbeat2 {
+                client_uptime: p.client_uptime,
+            })));
+        },
+        Packet::ExitRequest(p) => {
+            // TODO: Send init packets depending on type
+            out.push(PacketOrBlob::Packet(Packet::ExitResponse(ExitResponse {
+                unk: U32(0),
+            })));
+            out.push(PacketOrBlob::Packet(Packet::ConnectionError(ConnectionError {
+                code: U32(100),
+            })));
+        }
+        Packet::ConnectionClose2() => {
+            info!("connection closed");
+        }
         other => {
             error!("unexpected packet from client: {other:?}");
         }
