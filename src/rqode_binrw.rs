@@ -34,6 +34,11 @@ impl Eq for F32 {}
 #[brw(little, magic = 0x08u8)]
 pub struct U64(pub u64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[binrw]
+#[brw(little, magic = 0x13u8)]
+pub struct Op13([u16; 4]);
+
 /// u32 haircolor | u32 skin | u16 unk | u16 face | u16 unk | u16 unk
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
@@ -49,9 +54,10 @@ pub struct BodyParam {
     pub unk7: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
 #[brw(little, magic = 0x21u8)]
+#[debug("{:#x}", _0)]
 pub struct Op21(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +85,15 @@ pub struct Op36(pub u32, pub u16);
 #[binrw]
 #[brw(little, magic = 0x3Bu8)]
 pub struct Op3B(pub [u32; 4]);
+
+/// Contains array of currency balances
+/// 0 - gold
+#[binrw]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[brw(little, magic = 0x6Cu8)]
+pub struct CurrencyData {
+    pub data: [u16; 36]
+}
 
 #[binrw]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +124,11 @@ pub struct RZlib {
     /// u16 uncompressed size is probably prepended 
     /// `yasli`-encoded?
     /// 0xB1A4C17F - magic
-    #[br(try_map = |v: Vec<u8>| zlib_decompress(&v[2..]))]
+    #[br(try_map = |v: Vec<u8>| if v.len() == 0 {
+        Ok(vec![])
+    } else {
+        zlib_decompress(&v[2..])
+    })]
     // TODO: Compress
     pub data: Vec<u8>
 }
@@ -185,6 +204,8 @@ pub enum DataElement {
     #[debug("F32({})", _0.0)]
     F32(F32),
     #[debug("{:?}", _0)]
+    Op13(Op13),
+    #[debug("{:?}", _0)]
     Op1D(BodyParam),
     #[debug("{:?}", _0)]
     Op21(Op21),
@@ -194,6 +215,8 @@ pub enum DataElement {
     Op36(Op36),
     #[debug("{:?}", _0)]
     Op3B(Op3B),
+    #[debug("{:?}", _0)]
+    CurrencyData(CurrencyData),
 
     // String/bytes read condition: EOF or next element is valid
     #[br(pre_assert(false))]

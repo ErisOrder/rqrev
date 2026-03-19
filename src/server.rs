@@ -1,5 +1,6 @@
 use std::{io::{Cursor, Seek, SeekFrom}, sync::Arc};
 
+use clap::Parser;
 use num_enum::TryFromPrimitive;
 use pretty_hex::PrettyHex;
 use ringbuf::{HeapRb, traits::{Consumer, Observer, Producer}};
@@ -275,18 +276,7 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
                         name: "Казума".into(),
                         unk9: U8(0),
                         unk10: U64(0),
-                        equip: RVec::from(vec![
-                            ItemDesc {
-                                // Chest armor
-                                slot: InvSlot { idx: 3, unk1: 0, tab: 0, inv: 1 },
-                                id: U32(5143),
-                                count: U16(1),
-                                flags: U32(0x0000),
-                                unk5: None,
-                                unk6: None,
-                                ext: None
-                            }
-                        ])
+                        equip: RVec::from(starter_pack())
                     }) },
                     CharacterSlot { id: U32(0), info: None },
                     CharacterSlot { id: U32(0), info: None },
@@ -308,23 +298,12 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
             out.push(PacketOrBlob::Packet(Packet::Inventory(Inventory{
                 unk0: U8(1),
                 unk1: U16(1),
-                items: RVec::from(vec![
-                    ItemDesc {
-                        // Chest armor
-                        slot: InvSlot { idx: 3, unk1: 0, tab: 0, inv: 1 },
-                        id: U32(5143),
-                        count: U16(1),
-                        flags: U32(0x0000),
-                        unk5: None,
-                        unk6: None,
-                        ext: None
-                    }
-                ])
+                items: RVec::from(starter_pack())
             })));
             // Game crashes without this packet
             // Certainly contains character info
             out.push(PacketOrBlob::Blob(
-                include_bytes!("../../captures/blobs/p51.bin")
+                include_bytes!("../../captures/blobs/p51_ktrunc.bin")
             ));
             out.push(PacketOrBlob::Packet(Packet::SwitchLocation(SwitchLocation {
                 location_id: U32(25565),
@@ -332,11 +311,13 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
             })));
             out.push(PacketOrBlob::Packet(Packet::PosCamera(PosCamera {
                 unk0: U32(0),
-                x: F32(130.0),
-                y: F32(108.0),
+                coords: Coords {
+                    x: F32(130.0),
+                    y: F32(108.0),
+                },
                 rot: F32(0.0),
                 unk4: U8(0),
-                unk5: F32(5.0),
+                movspeed: F32(5.0),
                 effects: RVec::from(vec![]),
             })));
         }
@@ -349,6 +330,17 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
                 p.clone()
             )));
         },
+        Packet::SendChatMessage(p) => {
+            // FIXME: Does not work
+            out.push(PacketOrBlob::Packet(Packet::ChatMessage(ChatMessage {
+                chat_id: Op21(0x0),
+                text: p.text.clone(),
+                name: "SRV".into(),
+            })));
+        }
+        Packet::ShowEmotion(p) => {
+            process_chat_command(&p.emo.data, &mut out);
+        }
         // Packet::StatUpdateRequest(stat_update_request) => todo!(),
         // Packet::BuyItemRequest(buy_item_request) => todo!(),
         // Packet::SellItemRequest(sell_item_request) => todo!(),
@@ -380,3 +372,112 @@ async fn process_packet(state: &State, p: &mut Packet) -> Vec<PacketOrBlob> {
     out
 }
 
+
+pub fn starter_pack() -> Vec<ItemDesc> {
+    vec![
+        ItemDesc {
+            // Chest armor
+            slot: InvSlot { idx: 3, unk1: 0, tab: 0, inv: 1 },
+            id: U32(5143),
+            count: U16(1),
+            flags: U32(0x0000),
+            unk5: None,
+            unk6: None,
+            ext: None
+        },
+        ItemDesc {
+            // Right hand weapon 
+            slot: InvSlot { idx: 4, unk1: 0, tab: 0, inv: 1 },
+            id: U32(309),
+            count: U16(1),
+            flags: U32(0x0000),
+            unk5: None,
+            unk6: None,
+            ext: None
+        },
+        ItemDesc {
+            // Left hand weapon 
+            slot: InvSlot { idx: 5, unk1: 0, tab: 0, inv: 1 },
+            id: U32(2244),
+            count: U16(1),
+            flags: U32(0x0000),
+            unk5: None,
+            unk6: None,
+            ext: None
+        },
+    ]
+}
+
+#[derive(clap::Parser)]
+enum ChatCli {
+    /// Change location
+    Loc {
+        id: u32,
+    },
+    /// Spawn mob
+    Spawnmob {
+        id: u16,
+        hp: u32,
+    }
+}
+
+fn process_chat_command(text: &str, out: &mut Vec<PacketOrBlob>) -> Option<()> {
+    let cmd = &text[..text.len() - 1];
+    let args = match ChatCli::try_parse_from(["RQ"].into_iter().chain(cmd.split_whitespace())) {
+        Ok(a) => a,
+        Err(e) => {
+            error!("command parse error: {e}");
+            return None;
+        },
+    };
+
+    match args {
+        ChatCli::Loc { id } => {
+            out.push(PacketOrBlob::Packet(Packet::SwitchLocation(SwitchLocation {
+                location_id: U32(id),
+                unk1: U32(0),
+            })));
+            out.push(PacketOrBlob::Packet(Packet::PosCamera(PosCamera {
+                unk0: U32(0),
+                coords: Coords {
+                    x: F32(0.0),
+                    y: F32(0.0),
+                },
+                rot: F32(0.0),
+                unk4: U8(1),
+                movspeed: F32(20.0),
+                effects: RVec::from(vec![]),
+            })));
+        },
+        ChatCli::Spawnmob { id, hp } => {
+            out.push(PacketOrBlob::Packet(Packet::Entity(Entity {
+                tag: U8(9),
+                kind: EntityKind::Mob(MobEntity {
+                    id: U32(1000),
+                    mob_id: U16(id),
+                    level: U16(1),
+                    custom_name: RString::empty(),
+                    hp: U32(hp),
+                    coords: Coords {
+                        x: F32(0.0),
+                        y: F32(0.0),
+                    },
+                    unk2: U8(0),
+                    unk3: F32(0.5),
+                    scale: F32(1.0),
+                    unk5: U32(3),
+                    unk6: U32(0),
+                    max_hp: U32(hp),
+                    unk8: F32(6.0),
+                    unk9: U16(0),
+                    unk10: U32(0),
+                    unk11: RBool(0),
+                    unk12: U32(0),
+                    unk13: U32(0),
+                }),
+            })));
+        },
+    }
+
+    Some(())
+}

@@ -10,7 +10,7 @@
 
 use std::net::Ipv4Addr;
 
-use binrw::{BinRead, BinResult, binrw, helpers::until_eof};
+use binrw::{BinRead, BinResult, BinWrite, binrw, helpers::until_eof};
 use pretty_hex::PrettyHex;
 use crate::rqode_binrw::*;
 
@@ -97,6 +97,10 @@ pub enum PacketType {
     /// order id, authorized, 
     SteamMicroTxn = 0x28,
 
+    /// Server -> Client
+    /// Initializes player in world
+    PlayerData = 0x33,
+
     /// Client -> Server
     EnterWorldRequest = 0x34,
 
@@ -118,6 +122,9 @@ pub enum PacketType {
     HeartbeatClient = 0x46,
     /// Server -> Client
     HeartbeatServer = 0x47,
+    
+    /// Client -> Server
+    SendChatMessage = 0x4D,
     
     /// Server -> Client
     ChatMessage = 0x4E,
@@ -174,9 +181,9 @@ pub enum PacketType {
     EntityDeath = 0xA4,
 
     /// Server -> Client
-    /// Sent when entity dies and player receives/gives currency
+    /// Sent when entity dies and player receives/gives currency, etc
     /// Seems to only be used to display lines in battle log
-    CurrencyDiff = 0xAE,
+    BattleLog = 0xAE,
 
     // /// Server -> Client
     // /// Update quest info
@@ -189,6 +196,11 @@ pub enum PacketType {
     /// Server -> Client
     /// Sent when character stat gets updated
     StatUpdate = 0xA7,
+
+    // FIXME: Or not
+    /// Server -> Client
+    /// Sent to notify client about skill cooldown
+    SkillCooldown = 0xB4,
     
     /// Client -> Server
     /// Sent when player moves item in inventory
@@ -277,6 +289,8 @@ pub enum Packet {
     Packet13(Packet13),
     #[brw(magic(0x16u16))]
     Packet16(Packet16),
+    #[brw(magic(0x33u16))]
+    PlayerData(PlayerData),
     #[brw(magic(0x34u16))]
     EnterWorldRequest(EnterWorldRequest),
     #[brw(magic(0x38u16))]
@@ -287,6 +301,8 @@ pub enum Packet {
     HeartbeatClient(HeartbeatClient),
     #[brw(magic(0x47u16))]
     HeartbeatServer(HeartbeatServer),
+    #[brw(magic(0x4Du16))]
+    SendChatMessage(SendChatMessage),
     #[brw(magic(0x4Eu16))]
     ChatMessage(ChatMessage),
     #[brw(magic(0x52u16))]
@@ -318,9 +334,11 @@ pub enum Packet {
     #[brw(magic(0xA7u16))]
     StatUpdate(StatUpdate),
     #[brw(magic(0xAEu16))]
-    CurrencyDiff(CurrencyDiff),
+    BattleLog(BattleLog),
     #[brw(magic(0xAFu16))]
     ExperienceAmount(ExperienceAmount),
+    #[brw(magic(0xB4u16))]
+    SkillCooldown(SkillCooldown),
     #[brw(magic(0xBBu16))]
     MoveItemRequest(MoveItem),
     #[brw(magic(0xBEu16))]
@@ -592,6 +610,109 @@ pub struct PinResult {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Coords {
+    pub x: F32,
+    pub y: F32,
+}
+
+// parsed: [F32(0), F32(0), F32(0), F32(0), F32(0), F32(1), F32(0), F32(1), F32(0), F32(1), F32(0),
+// F32(1), F32(0), F32(4), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(5), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(100), F32(0), F32(100), F32(0), F32(0.7),
+// F32(0), F32(1), F32(0), F32(12), F32(0), F32(0), F32(0), F32(0), F32(0), F32(10), F32(0), F32(0),
+// F32(0), F32(1), F32(0), F32(0), F32(0), F32(0), F32(7), F32(1), F32(0), F32(0), F32(0), F32(0),
+// F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(0), F32(1), F32(0), F32(1), F32(0), F32(3),
+// F32(0), F32(0), F32(0), F32(0), F32(0),
+// U64(0), U16(0), U16(0), U64(0), F32(0), F32(30), U16(0),
+// U16(0), U32(0), U32(0), U32(0), U16(36), U16(36), U16(36), U16(36), U16(27), U16(20), U16(20),
+// U16(20), U16(20), U16(100), Op6C { len: 62, unk1: 0, data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+// 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+// 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }, U8(0), U16(0)]
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerData {
+    /// Seems to be ignored
+    pub unk0: U8,
+    pub id: U32,
+    pub class: U16,
+    pub level: U16,
+    pub unk4: U8,
+    pub unk5: U8,
+    pub unk6: U8,
+    pub name: RString,
+    pub hp: U32,
+    pub mp: U32,
+    pub location_id: U32,
+    pub coords: Coords,
+    pub unk13: U8,
+    pub rot: F32,
+    pub unk15: RBool,
+    pub unk16: RBool,
+    pub unk17: RBool,
+    pub unk18: RBool,
+    pub unk19: RBool,
+    pub body: BodyParam,
+    // Current state?
+    pub hp2: U32,
+    pub mp2: U32,
+    pub unk23: F32,
+    pub unk24: U32,
+    pub unk25: U32,
+    pub unk26: U32,
+    pub unk27: U32,
+    pub unk28: U32,
+    pub unk29: U8,
+    pub unk30: U32,
+    pub unk31: U32,
+    pub unk32: RString,
+    pub unk33: U64,
+    pub unk34: U16,
+    pub unk35: U16,
+    pub unk36: RBool,
+    pub unk37: RString,
+    pub unk38: U32,
+
+    pub effects: RVec<CameraEffect>,
+    
+    pub unk39: Op13,
+    pub unk40: U32,
+    pub unk41: U32,
+    pub unk42: U16,
+    pub stats: RVec<F32>,
+    // Apparently has the same size
+    #[br(count = stats.data.len())]
+    pub stats2: Vec<F32>,
+
+    pub unk45: U64,
+    pub talents: RVec<U16>,
+    pub unk47: RVec<U16>,
+    pub unk48: U64,
+    pub unk49: F32,
+    pub unk50: F32,
+    pub unk51: U16,
+    pub unk52: U16,
+    pub unk53: U32,
+    pub unk54: U32,
+    pub unk55: U32,
+    pub unk56: [U16; 4],
+    pub unk57: U16,
+    pub unk58: [U16; 4],
+    pub unk59: U16,
+    pub unk60: CurrencyData,
+    pub unk61: U8,   
+    pub ach_data: RZlib,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnterWorldRequest {
     pub char_idx: U8,
 }
@@ -682,30 +803,58 @@ pub struct HeartbeatServer {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CharacterMove {
-    pub x: F32,
-    pub y: F32,
+    pub coords: Coords,
     // TODO: May concat multiple packets
 }
 
-// [U8(9), U32(2347483652), U16(112), U16(8), "\0", U32(200), F32(38.25), F32(-27.75),
-// U8(0), F32(-0.674698), F32(1), U32(2), U32(0), U32(200), F32(1.3), U16(0), U32(0),
-// Bool(0), U32(0), U32(8)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entity {
-    pub unk0: U8,
+    pub tag: U8,
+    #[br(args(tag.0))]
+    pub kind: EntityKind,
+}
+
+#[binrw]
+#[brw(little)]
+#[brw(import(tag: u8))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntityKind {
+    #[br(pre_assert(tag == 9))]
+    Mob(MobEntity),
+    UnknownOrFailed,
+}
+
+// Server: packet 0x5A (90) EntityAdd
+// parsed: Entity(Entity { unk0: U8(9), id: U32(2347483658), mob_id: U16(31), level: U16(4), unk1: "\0", hp: U32(120), x: F32(-37.97446), y: F32(102.5613), unk2: U8(0), unk3: F32(-0.6671703), unk4: F32(1.0) })
+// left: Length: 40 (0x28) bytes
+// 0000:   04 03 00 00  00 04 00 00  00 00 04 78  00 00 00 05   ...........x....
+// 0010:   cd cc bc 40  02 00 00 04  00 00 00 00  03 00 04 00   ...@............
+// 0020:   00 00 00 04  08 00 00 00                             ........
+// parsed: [U32(3), U32(0), U32(120), F32(5.9), U16(0), U32(0), Bool(0), U32(0), U32(8)]
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MobEntity {
     pub id: U32,
     pub mob_id: U16,
     pub level: U16,
-    pub unk1: RString, 
+    pub custom_name: RString, 
     pub hp: U32,
-    pub x: F32,
-    pub y: F32,
+    pub coords: Coords,
     pub unk2: U8,
     pub unk3: F32,
-    pub unk4: F32,
-    // TODO: Rest of data
+    pub scale: F32,
+    pub unk5: U32,
+    pub unk6: U32,
+    pub max_hp: U32,
+    pub unk8: F32,
+    pub unk9: U16,
+    pub unk10: U32,
+    pub unk11: RBool,
+    pub unk12: U32,
+    pub unk13: U32,
 }
 
 // [U32(2347483652), F32(32.25), F32(55.75), U16(1331), U16(65), U16(24576)]
@@ -714,8 +863,7 @@ pub struct Entity {
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
 pub struct EntityMove {
     pub id: U32,
-    pub x: F32,
-    pub y: F32,
+    pub coords: Coords,
     pub unk12: U16,
     #[debug("{:#x}", flags.0)]
     pub flags: U16,
@@ -727,6 +875,14 @@ pub struct EntityMove {
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
 pub struct EntityRemove {
     pub id: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SendChatMessage {
+    pub chat_id: Op21,
+    pub text: RString,
 }
 
 #[binrw]
@@ -777,12 +933,11 @@ pub struct SwitchLocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PosCamera {
     pub unk0: U32,
-    pub x: F32,
-    pub y: F32,
+    pub coords: Coords,
     pub rot: F32,
     pub unk4: U8,
     /// Need for movement to work
-    pub unk5: F32,
+    pub movspeed: F32,
     
     pub effects: RVec<CameraEffect>,    
 }
@@ -795,23 +950,51 @@ pub struct CameraEffect {
     pub player_id: U32,
     // MB related to duration
     pub unk2: U32,
-    // value stream: meta-op: U8(0) = skip, U8(2) = U16, U8(3) = F32
-    pub vstream: (),
+    pub v1: Prefixed,
+    pub v2: Prefixed
 }
 
 #[binrw]
 #[brw(little)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrefixedValue {
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+#[debug("{:?}", value)]
+pub struct Prefixed {
+    #[br(temp)]
+    #[bw(calc = U8(value.prefix()))]
     pub prefix: U8,
-    #[br(if(prefix.0 == 1))]
-    pub u8: Option<U8>,
-    #[br(if(prefix.0 == 2))]
-    pub u16: Option<U16>,
-    #[br(if(prefix.0 == 3))]
-    pub f32: Option<F32>,
+    #[br(args(prefix.0))]
+    pub value: PrefixedValue,
 }
 
+#[binrw]
+#[brw(little)]
+#[brw(import(prefix: u8))]
+#[repr(u8)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrefixedValue {
+    #[br(pre_assert(prefix == 0))]
+    Empty,
+    #[br(pre_assert(prefix == 1))]
+    U8(U8),
+    #[br(pre_assert(prefix == 2))]
+    U16(U16),
+    #[br(pre_assert(prefix == 3))]
+    F32(F32),
+    #[br(pre_assert(prefix == 0xF))]
+    F32x2([F32; 2]),
+}
+
+impl PrefixedValue {
+    pub fn prefix(&self) -> u8 {
+        match self {
+            PrefixedValue::Empty => 0,
+            PrefixedValue::U8(_) => 1,
+            PrefixedValue::U16(_) => 2,
+            PrefixedValue::F32(_) => 3,
+            PrefixedValue::F32x2(_) => 0xF,
+        }
+    }
+}
 
 // Client: packet 146 (0x92) ; Length: 40 (0x28) bytes
 // 0000:   04 8c c2 eb  8b 02 08 00  25 00 00 00  00 01 ff 05   ........%.......
@@ -827,8 +1010,8 @@ pub struct UseAbility {
     pub skill_id: U16,
     pub used_item: InvSlot,
     pub unk10: U8,
-    pub pos0: [F32; 2],
-    pub pos1: [F32; 2],
+    pub pos0: Coords,
+    pub pos1: Coords,
     pub unk13: U32,
 }
 
@@ -868,13 +1051,13 @@ pub struct EntityDeath {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurrencyDiff {
-    // TODO: Not only for receiving
-    /// 4 for exp
-    /// 8 for gold
-    pub ctype: U8,
-    pub mob_id: U32,
-    pub value: U32,
+pub struct BattleLog {
+    /// 4 - receive exp from mob
+    /// 8 - receive gold
+    pub tag: U8,
+    // These are for tag 4
+    // pub mob_id: U32,
+    // pub value: U32,
 }
 
 #[binrw]
@@ -891,6 +1074,14 @@ pub struct StatUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExperienceAmount {
     pub value: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillCooldown {
+    pub seconds: F32,
+    pub skill_id: U16,
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- move item request, slot #8 -> #20

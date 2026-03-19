@@ -10,8 +10,9 @@ const IGNORE: &[PacketType] = &[
     PacketType::HeartbeatServer,
     PacketType::Heartbeat2,
     
-    PacketType::CharacterMove,  
+    // PacketType::CharacterMove,  
     PacketType::EntityMove,
+    PacketType::StatUpdate,
 ];
 
 const COLLAPSE: &[PacketType] = &[

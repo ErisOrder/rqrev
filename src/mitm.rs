@@ -9,20 +9,23 @@ use crate::{cipher::*, protocol::PacketType, ptrace::ptrace, rqode_binrw::zlib_d
 
 const DROP: &[u16] = &[
     // 0x33, // Causes crash
-    0x415,
-    0x90,
-    0x3E9,
-    0x3EA,
-    0x3FA,
-    0x116,
-    0x117,
-    0xCE,
-    0x408,
-    0x410,
-    0x412,
-    0xEB,
-    0x2780, // Triggers beginner hints
-    0x1B6,
+
+    // Not strictly required for login
+    // One of these packets contains panel conf
+    // 0x415,
+    // 0x90,
+    // 0x3E9,
+    // 0x3EA,
+    // 0x3FA,
+    // 0x116,
+    // 0x117,
+    // 0xCE,
+    // 0x408,
+    // 0x410,
+    // 0x412,
+    // 0xEB,
+    // 0x2780, // Triggers beginner hints
+    // 0x1B6,
 
     // 0x64, // Loading stops on 97%
 ];
