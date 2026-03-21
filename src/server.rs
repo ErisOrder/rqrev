@@ -418,6 +418,11 @@ enum ChatCli {
     Spawnmob {
         id: u16,
         hp: u32,
+    },
+    /// Give item
+    Give {
+        id: u32,
+        quant: u16,
     }
 }
 
@@ -427,6 +432,11 @@ fn process_chat_command(text: &str, out: &mut Vec<PacketOrBlob>) -> Option<()> {
         Ok(a) => a,
         Err(e) => {
             error!("command parse error: {e}");
+            // out.push(PacketOrBlob::Packet(Packet::ChatMessage(ChatMessage {
+            //     chat_id: Op21(0x0),
+            //     text: e.to_string().into(),
+            //     name: "SRV".into(),
+            // })));
             return None;
         },
     };
@@ -477,6 +487,20 @@ fn process_chat_command(text: &str, out: &mut Vec<PacketOrBlob>) -> Option<()> {
                 }),
             })));
         },
+        ChatCli::Give { id, quant } => {
+            out.push(PacketOrBlob::Packet(Packet::ReceiveItem(ReceiveItem {
+                unk0: U8(1),
+                item: ItemDesc {
+                    slot: InvSlot { idx: 1, unk1: 0, tab: 2, inv: 2 },
+                    id: U32(id),
+                    count: U16(quant),
+                    flags: U32(0),
+                    unk5: None,
+                    unk6: None,
+                    ext: None
+                }
+            })));
+        }
     }
 
     Some(())
