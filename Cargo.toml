@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
+async-trait = "0.1.89"
+bevy_ecs = "0.18.1"
 binrw = { version = "0.15.1", default-features = false, features = ["std"] }
 bytemuck = "1.25.0"
 chrono = "0.4.44"
@@ -12,9 +14,12 @@ clap = { version = "4.6.0", features = ["derive"] }
 derive_more = { version = "2.1.1", features = ["debug", "try_unwrap"] }
 fast-socks5 = "1.0.0"
 flate2 = "1.1.9"
+flume = "0.12.0"
+glam = "0.32.1"
 hex = "0.4.3"
 hex-literal = "1.1.0"
 num_enum = "0.7.5"
+parking_lot = "0.12.5"
 pretty-hex = "0.4.1"
 rand = "0.10.0"
 rc4 = { version = "0.1.0", features = ["std"] }

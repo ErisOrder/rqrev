@@ -37,10 +37,10 @@ pub struct U64(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[binrw]
 #[brw(little, magic = 0x13u8)]
-pub struct Op13([u16; 4]);
+pub struct Op13(pub [u16; 4]);
 
 /// u32 haircolor | u32 skin | u16 unk | u16 face | u16 unk | u16 unk
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x1Du8)]
 pub struct BodyParam {
@@ -133,6 +133,14 @@ pub struct RZlib {
     pub data: Vec<u8>
 }
 
+impl RZlib {
+    pub fn empty() -> Self {
+        Self {
+            data: vec![0, 0],
+        }
+    }
+}
+
 #[binrw]
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
 #[brw(little)]
@@ -144,7 +152,7 @@ pub struct RString {
     #[br(count = len.0)]
     #[br(try_map = |v: Vec<u8>| String::from_utf8(v))]
     #[bw(map = |v| v.as_bytes())]
-    pub data: String,
+    data: String,
 }
 
 impl RString {
@@ -152,6 +160,11 @@ impl RString {
         Self {
             data: String::from("\0")
         }
+    }
+
+    pub fn into_string(mut self) -> String {
+        self.data.pop();
+        self.data
     }
 }
 
@@ -386,6 +399,7 @@ pub fn packet_02() {
     dbg!(v);
     // let v = read_guess_all(Cursor::new(hex)).unwrap();
 }
+
 #[test]
 pub fn packet_4e() {
     let hex = hex_literal::hex!("
@@ -398,4 +412,20 @@ pub fn packet_4e() {
     let v = crate::protocol::ChatMessage::read_partial(&hex).unwrap();
     dbg!(v);
     // let v = read_guess_all(Cursor::new(hex)).unwrap();
+}
+
+#[test]
+pub fn packet_51_rt() {
+    let orig = include_bytes!("../../captures/blobs/p51_ktrunc.bin");
+    
+    let p = crate::protocol::Packet::PlayerData(
+        crate::protocol::PlayerData::read(&mut std::io::Cursor::new(
+            &orig[2..]
+        )).unwrap()
+    );
+
+    let mut out = Cursor::new(vec![]);
+    p.write(&mut out).unwrap();
+
+    assert_eq!(out.into_inner().as_slice(), orig);
 }

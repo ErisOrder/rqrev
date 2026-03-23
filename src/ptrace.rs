@@ -11,7 +11,7 @@ const IGNORE: &[PacketType] = &[
     PacketType::Heartbeat2,
     
     // PacketType::CharacterMove,  
-    PacketType::EntityMove,
+    // PacketType::EntityMove,
     PacketType::StatUpdate,
 ];
 

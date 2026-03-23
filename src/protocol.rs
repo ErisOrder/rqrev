@@ -654,7 +654,7 @@ pub struct PlayerData {
     pub unk13: U8,
     pub rot: F32,
     pub unk15: RBool,
-    pub unk16: RBool,
+    pub alive: RBool,
     pub unk17: RBool,
     pub unk18: RBool,
     pub unk19: RBool,
@@ -662,7 +662,7 @@ pub struct PlayerData {
     // Current state?
     pub hp2: U32,
     pub mp2: U32,
-    pub unk23: F32,
+    pub movspeed: F32,
     pub unk24: U32,
     pub unk25: U32,
     pub unk26: U32,
@@ -682,7 +682,8 @@ pub struct PlayerData {
     pub effects: RVec<CameraEffect>,
     
     pub unk39: Op13,
-    pub unk40: U32,
+    /// Exp on this level
+    pub current_exp: U32,
     pub unk41: U32,
     pub unk42: U16,
     pub stats: RVec<F32>,
@@ -801,9 +802,23 @@ pub struct HeartbeatServer {
 
 #[binrw]
 #[brw(little)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
 pub struct CharacterMove {
     pub coords: Coords,
+    /// Flags:
+    /// 0x20 - stop
+    /// 0x200 - ?
+    /// 0x2 - cursor is being held
+    /// 0x1 - target changed
+    #[debug("{:#x}", flags.0)]
+    pub flags: U16,
+    /// Seems to be move direction from 0 to 65535, where 0 is lower-mid
+    pub direction: U16, 
+    /// Another direction, always sent when char starts to move
+    #[br(if(flags.0 & 0x200 != 0))]
+    pub dir2: Option<U8>,
+    #[br(if(flags.0 & 0x200 != 0))]
+    pub unk4: Option<U8>,
     // TODO: May concat multiple packets
 }
 

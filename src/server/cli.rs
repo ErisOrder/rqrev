@@ -24,8 +24,7 @@ enum ChatCli {
 }
 
 pub fn process_cli_command(text: &str, out: &mut Vec<PacketOrBlob>) -> Option<()> {
-    let cmd = &text[..text.len() - 1];
-    let args = match ChatCli::try_parse_from(["RQ"].into_iter().chain(cmd.split_whitespace())) {
+    let args = match ChatCli::try_parse_from(["RQ"].into_iter().chain(text.split_whitespace())) {
         Ok(a) => a,
         Err(e) => {
             error!("command parse error: {e}");
