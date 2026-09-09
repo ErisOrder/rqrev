@@ -289,6 +289,7 @@ fn entity_move(
                     continue;
                 }
                 
+                // TODO: Join to single packet
                 tx.send(MessageFromShard {
                     shard_id: loc.id,
                     kind: MessageFromShardKind::EntityMove {

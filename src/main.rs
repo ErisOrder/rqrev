@@ -2,7 +2,7 @@
 
 use clap::Parser;
 use fast_socks5::{
-    ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, states::CommandRead}, util::target_addr::TargetAddr
+    ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, states::CommandRead}, util::target_addr::{TargetAddr, ToTargetAddr}
 };
 use pretty_hex::PrettyHex;
 use tracing::info;
@@ -81,6 +81,11 @@ async fn serve_socks5(server: Option<Arc<Server>>, socket: tokio::net::TcpStream
                     spawn_and_log_error(do_mitm(proto, target_addr));
                 },
                 Some(s) => {
+                    // Refuse connection to github ?..
+                    if target_addr.clone().into_string_and_port().1 == 443 {
+                        proto.reply_error(&ReplyError::ConnectionRefused).await?;
+                        return Ok(());
+                    }
                     let conn = proto.reply_success("127.0.0.1:0".parse().unwrap()).await?;
                     s.add_connection(conn);
                 },

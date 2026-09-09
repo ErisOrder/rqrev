@@ -143,7 +143,7 @@ impl State {
                     coords: pos.into(),
                     unk12: U16(0),
                     flags: U16(0),
-                    unk16: U16(0),
+                    direction: U16(0),
                 }]))
             },
             MessageFromShardKind::PlayerLoaded { bundle } => {

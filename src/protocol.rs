@@ -149,6 +149,10 @@ pub enum PacketType {
     /// Sent when new entity moves
     EntityMove = 0x5C,
 
+    // /// Server -> Client
+    // /// Sent when entity drops item
+    // EntityDrop = 0x5D,
+
     /// Server -> Client
     /// Sent when entity was removed (or disappear?)
     EntityRemove = 0x5E,
@@ -639,6 +643,7 @@ pub struct Coords {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayerData {
     /// Seems to be ignored
+    /// Entity tag?
     pub unk0: U8,
     pub id: U32,
     pub class: U16,
@@ -838,6 +843,8 @@ pub struct Entity {
 pub enum EntityKind {
     #[br(pre_assert(tag == 9))]
     Mob(MobEntity),
+    #[br(pre_assert(tag == 8))]
+    Player(PlayerEntity),
     UnknownOrFailed,
 }
 
@@ -872,6 +879,84 @@ pub struct MobEntity {
     pub unk13: U32,
 }
 
+
+// 
+#[binrw]
+#[brw(little)]
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub struct PlayerEntity {
+    pub id: U32,
+    pub class: U16,
+    pub level: U16,
+    pub unk4: U8,
+    pub unk5: U8,
+    pub unk6: U8,
+    pub name: RString,
+    pub hp: U32,
+    pub mp: U32,
+    pub location_id: U32,
+    pub coords: Coords,
+    pub unk13: U8,
+    pub rot: F32,
+    pub unk15: RBool,
+    pub alive: RBool,
+    pub unk17: RBool,
+    pub unk18: RBool,
+    pub unk19: RBool,
+    pub body: BodyParam,
+    // Not main, main is in the stats
+    pub max_hp: U32,
+    pub max_mp: U32,
+    pub movspeed: F32,
+    pub unk24: U32,
+    pub unk25: U32,
+    pub unk26: U32,
+    pub unk27: U32,
+    pub unk28: U32,
+    pub unk29: U8,
+    // At least to here matches
+    pub unk30: U32,
+    pub unk31: U32,
+    pub unk32: RString,
+    pub unk33: U64,
+    pub unk34: U16,
+    pub unk35: U16,
+    pub unk36: RBool,
+    pub unk37: RString,
+    pub unk38: U32,
+
+    pub effects: RVec<CameraEffect>,
+    
+    pub unk39: Op13,
+    /// Exp on this level
+    pub current_exp: U32,
+    pub unk41: U32,
+    pub unk42: U16,
+    pub stats: RVec<F32>,
+    // Apparently has the same size
+    #[br(count = stats.data.len())]
+    pub stats2: Vec<F32>,
+
+    pub unk45: U64,
+    pub talents: RVec<U16>,
+    pub unk47: RVec<U16>,
+    pub unk48: U64,
+    pub unk49: F32,
+    pub unk50: F32,
+    pub unk51: U16,
+    pub unk52: U16,
+    pub unk53: U32,
+    pub unk54: U32,
+    pub unk55: U32,
+    pub unk56: [U16; 4],
+    pub unk57: U16,
+    pub unk58: [U16; 4],
+    pub unk59: U16,
+    pub unk60: CurrencyData,
+    pub unk61: U8,   
+    pub ach_data: RZlib,
+}
+
 // [U32(2347483652), F32(32.25), F32(55.75), U16(1331), U16(65), U16(24576)]
 #[binrw]
 #[brw(little)]
@@ -882,7 +967,7 @@ pub struct EntityMove {
     pub unk12: U16,
     #[debug("{:#x}", flags.0)]
     pub flags: U16,
-    pub unk16: U16,
+    pub direction: U16,
 }
 
 #[binrw]
