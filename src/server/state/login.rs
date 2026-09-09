@@ -176,7 +176,7 @@ pub fn chars() -> Vec<CharacterSlot> {
                 unk6: 0,
                 unk7: 0
             },
-            name: "Еби гусей".into(),
+            name: "Аве Эрис".into(),
             unk9: U8(0),
             unk10: U64(0),
             equip: RVec::from(starter_pack())
