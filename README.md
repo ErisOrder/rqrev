@@ -4,6 +4,9 @@ Protocol reverse engineering tool and (very very very PoC) server emulator for `
 Project is in very early stage (and probably will stay in it for quite loooong time), but you can actually
 enter game world and do some basic actions like character moving or inventory management.
 
+![image](res/dlss.png)
+Some screenshot with DLSS5 Neural Rendering apllied to the game
+
 ## How to build
 
 Build should be quite straightforward. Just run `cargo build [--release]`
