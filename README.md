@@ -43,6 +43,8 @@ It is not self-describing, so dissection of uknown packets may be wrong.
 You can find this format description, I call it RQode, in file [src/rqode_binrw.rs](src/rqode_binrw.rs),
 and known game packets (be warned that I may have wrong assumptions on their purpose and structure) in [src/protocol.rs](src/protocol.rs).
 
+Game also uses [yasli](https://github.com/koalefant/yasli/tree/master) format in some compressed packets, also not self-describing unfortunately. 
+
 You can configure what to show in trace in file [src/ptrace.rs](src/ptrace.rs).
 You can configure which packets to drop and on which to stop exchange in file [src/mitm.rs](src/mitm.rs)
 
