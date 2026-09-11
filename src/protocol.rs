@@ -87,6 +87,10 @@ pub enum PacketType {
     /// Client -> Server
     /// DLC id
     SteamDlcInstalled = 0x25,
+
+    /// Server -> Client
+    /// Answer to TakeReward
+    DailyRewardTaken = 0x23,
     
     /// Client -> Server
     /// Issued when user presses "take reward" on char select screen
@@ -117,6 +121,14 @@ pub enum PacketType {
     /// Server -> Client
     /// Name avail response, single u32
     TestCharNameResp = 0x40,
+
+    /// Client -> Server
+    /// Sent on character creation
+    CreateCharacterReq = 0x41,
+
+    /// Server -> Client
+    /// Sent on successful character creation
+    CreateCharacterRes = 0x43,
     
     /// Client -> Server
     HeartbeatClient = 0x46,
@@ -257,6 +269,11 @@ pub enum PacketType {
     /// Both directions
     /// Client initiates and server echoes some timestamp
     Heartbeat2 = 0x199,
+
+    /// Both directions
+    /// Client initiates and server echoes
+    /// Contains milliseconds from client start 
+    Heartbeat3 = 0x19C,
 
     /// Client -> Server
     ExitRequest = 0x1D4,
