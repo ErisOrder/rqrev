@@ -5,9 +5,9 @@ use ringbuf::{HeapRb, traits::{Consumer, Observer, Producer}};
 use rsa::{BigUint, RsaPrivateKey, RsaPublicKey, rand_core::OsRng, traits::PublicKeyParts};
 use tracing::{debug, warn};
 
-use crate::{cipher::*, protocol::PacketType, ptrace::ptrace, rqode_binrw::zlib_decompress};
+use crate::{cipher::*, mitm_gui::{MitmGuiState, PacketEvent}, packet_view::dissect, protocol::PacketType, ptrace::ptrace, rqode_binrw::zlib_decompress};
 
-const DROP: &[u16] = &[
+const _DROP: &[u16] = &[
     // 0x33, // Causes crash
 
     // Not strictly required for login
@@ -40,6 +40,7 @@ pub struct Mitm {
     rx_buf: HeapRb<u8>,
     tx_buf: HeapRb<u8>,
     drop_packets: bool,
+    gui_state: MitmGuiState,
 }
 
 pub enum CipherS {
@@ -68,6 +69,7 @@ pub enum PacketSource {
 impl Mitm {
     pub fn new(
         passthrough: bool,
+        gui_state: MitmGuiState,
     ) -> Self {
         Self {
             cipher_state: CipherS::Uninit,
@@ -75,6 +77,8 @@ impl Mitm {
             rx_buf: HeapRb::new(1000000),
             tx_buf: HeapRb::new(1000000),
             drop_packets: false,
+            gui_state,
+            
         }
     }
     
@@ -120,6 +124,7 @@ impl Mitm {
                     PacketSource::Client,
                     &mut self.tx_buf,
                     &data,
+                    &self.gui_state,
                 );
 
                 // println!("--> dec : {:#?}", data.hex_dump());
@@ -184,6 +189,7 @@ impl Mitm {
                     PacketSource::Server,
                     &mut self.rx_buf,
                     &data,
+                    &self.gui_state,
                 );
                 
                 // Encrypt using our RX box
@@ -199,6 +205,7 @@ impl Mitm {
         source: PacketSource,
         buf: &mut HeapRb<u8>,
         data: &[u8],
+        gui_state: &MitmGuiState,
     ) -> Vec<u8> {
         
         // println!("{source:?} INPUT: {:#?}", data.hex_dump());
@@ -227,6 +234,9 @@ impl Mitm {
                 *drop_all = true;
             }
 
+            // Drop this packet
+            let settings = gui_state.settings.lock().clone();
+            
             // Try decompress
             let mut drop_compr = false;
             if headr[1] == PacketType::CompressedData as u16 {
@@ -235,17 +245,22 @@ impl Mitm {
                
                 if let Ok(x) = zlib_decompress(&mut temp[4..]) {
                     let ptype = u16::from_le_bytes(x[2..4].try_into().unwrap());
-                    drop_compr = DROP.contains(&ptype);
+                    drop_compr = settings.should_drop(ptype);
                 }
             }
             
-            // Drop this packet
-            if DROP.contains(&headr[1]) || *drop_all || drop_compr {
+            let pdrop = settings.should_drop(headr[1]);
+            if *drop_all || drop_compr || pdrop {
                 let mut temp = vec![0u8; headr[0] as usize];
                 buf.pop_slice(&mut temp);
                 
                 warn!("drop this packet");
-                ptrace(source, headr[1], &mut temp[2..]);
+                // ptrace(source, headr[1], &mut temp[2..]);
+                let packet = dissect(source, headr[1], &temp[2..], false);
+                let _ = gui_state.tx.try_send(PacketEvent {
+                    packet,
+                    dropped: true,
+                });
                 continue;
             }
 
@@ -255,7 +270,12 @@ impl Mitm {
             buf.pop_slice(&mut out[clen..]);
 
             // Callback
-            ptrace(source, headr[1], &mut out[clen + 2..]);
+            // ptrace(source, headr[1], &mut out[clen + 2..]);
+            let packet = dissect(source, headr[1], &out[clen + 2..], false);
+            let _ = gui_state.tx.try_send(PacketEvent {
+                packet,
+                dropped: false,
+            });
         }
         
         out

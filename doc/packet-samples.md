@@ -1,6 +1,57 @@
 # Samples
 Various packet samples
 
+## 0x1 AuthRequest
+First message sent to login server
+```
+Client: packet 0x1 (01) AuthRequest; Length: 175 (0xaf) bytes
+0000:   04 51 c5 a7  00 04 ee c3  a7 00 01 10  02 21 00 32   .Q...........!.2
+0010:   39 34 31 37  61 61 62 65  38 36 38 34  30 32 62 38   9417aabe868402b8
+0020:   31 30 62 61  32 66 34 32  37 34 32 36  35 63 31 00   10ba2f4274265c1.
+0030:   02 01 00 00  08 ec 34 af  c1 5c 23 00  00 02 0d 00   ......4..\#.....
+0040:   52 53 62 41  65 38 70 62  54 4f 54 48  00 02 01 00   RSbAe8pbTOTH....
+0050:   00 03 00 03  00 04 00 00  00 00 02 06  00 36 24 4b   .............6$K
+0060:   fe 8c 0e 19  36 02 50 ed  52 12 99 36  00 e0 4b 3c   ....6.P.R..6..K<
+0070:   1a b7 36 5e  0c 74 0e fd  14 36 00 00  00 00 00 00   ..6^.t...6......
+0080:   36 00 00 00  00 00 00 04  56 af 4b c6  08 56 af 4b   6.......V.K..V.K
+0090:   c6 a4 fd 90  cd 02 65 6e  02 01 00 00  02 01 00 00   ......en........
+00a0:   02 01 00 00  02 08 00 63  6c 61 73 73  69 63 00      .......classic.
+parsed: AuthRequest(AuthRequest { pc_millis_shift: U32(12289203), pc_millis: U32(12288848), auth_type: U8(16), account_id: "29417aabe868402b810ba2f4274265c1\0", unk0: "\0", unk1: U64(38881293448428), sign_in_code: "RSbAe8pbTOTH\0", unk2: "\0", unk3: RBool(0), unk4: RBool(0), unk5: U32(0), unk6: RVec { data: [Op36(2365475620, 6414), Op36(1391284226, 39186), Op36(1011605504, 46874), Op36(242486366, 5373), Op36(0, 0), Op36(0, 0)] }, unk7: U32(3326848854), unk8: U64(14812618058564874070), unk9: U16(28261), unk10: "\0", unk11: "\0", unk12: "\0", gateway: "classic\0" })// 
+```
+
+## 0x2 ServerList
+```
+Server: packet 0x2 (2) ServerList;
+Length: 415 (0x19f) bytes
+0000:   02 0a 00 02  04 00 02 0d  00 d0 93 d0  b5 d0 bb d0   ................
+0010:   b8 d0 be d1  81 00 04 02  00 00 00 02  05 00 02 0f   ................
+0020:   00 49 67 6e  69 73 20 28  45 75 72 6f  70 65 29 00   .Ignis (Europe).
+0030:   04 05 00 00  00 02 06 00  02 10 00 41  7a 74 65 63   ...........Aztec
+0040:   20 28 41 6d  65 72 69 63  61 29 00 04  02 00 00 00    (America)......
+0050:   02 07 00 02  10 00 4f 72  74 6f 73 20  28 41 6d 65   ......Ortos (Ame
+0060:   72 69 63 61  29 00 04 01  00 00 00 02  08 00 02 0d   rica)...........
+0070:   00 41 73 74  75 73 20 28  41 73 69 61  29 00 04 03   .Astus (Asia)...
+0080:   00 00 00 02  09 00 02 0a  00 53 6f 6c  75 73 5f 6f   .........Solus_o
+0090:   6c 64 00 04  03 00 00 00  02 0a 00 02  11 00 d0 a4   ld..............
+00a0:   d0 b5 d0 bd  d0 b8 d0 ba  d1 81 5f 6f  6c 64 00 04   .........._old..
+00b0:   02 00 00 00  02 0b 00 02  06 00 53 6f  6c 75 73 00   ..........Solus.
+00c0:   04 03 00 00  00 02 0c 00  02 0d 00 d0  a4 d0 b5 d0   ................
+00d0:   bd d0 b8 d0  ba d1 81 00  04 01 00 00  00 02 33 00   ..............3.
+00e0:   02 0f 00 50  79 72 6f 73  20 28 45 75  72 6f 70 65   ...Pyros (Europe
+00f0:   29 00 04 04  00 00 00 02  0a 00 02 04  00 02 09 00   )...............
+0100:   02 05 00 02  00 00 02 06  00 02 00 00  02 07 00 02   ................
+0110:   00 00 02 08  00 02 00 00  02 09 00 02  00 00 02 0a   ................
+0120:   00 02 00 00  02 0b 00 02  00 00 02 0c  00 02 0b 00   ................
+0130:   02 33 00 02  00 00 02 02  00 02 04 00  04 25 09 35   .3...........%.5
+0140:   c1 02 9e 10  02 19 00 02  0c 00 04 25  09 35 a4 02   ...........%.5..
+0150:   9e 10 02 2a  00 04 00 00  00 00 03 00  04 00 00 00   ...*............
+0160:   00 08 46 88  a4 6a 00 00  00 00 04 5d  9f 14 43 02   ..F..j.....]..C.
+0170:   04 00 08 f4  8f b2 69 00  00 00 00 02  01 00 02 04   ......i.........
+0180:   00 02 02 00  04 e4 6b 99  00 08 b4 e9  26 7a b5 bb   ......k.....&z..
+0190:   01 00 08 2c  d0 c2 bd 04  77 00 00 02  01 00 00      ...,....w......
+ServerList(ServerList { servers: RVec { data: [ServerDesc { id: U16(4), name: "Гелиос\0", unk1: U32(2) }, ServerDesc { id: U16(5), name: "Ignis (Europe)\0", unk1: U32(5) }, ServerDesc { id: U16(6), name: "Aztec (America)\0", unk1: U32(2) }, ServerDesc { id: U16(7), name: "Ortos (America)\0", unk1: U32(1) }, ServerDesc { id: U16(8), name: "Astus (Asia)\0", unk1: U32(3) }, ServerDesc { id: U16(9), name: "Solus_old\0", unk1: U32(3) }, ServerDesc { id: U16(10), name: "Феникс_old\0", unk1: U32(2) }, ServerDesc { id: U16(11), name: "Solus\0", unk1: U32(3) }, ServerDesc { id: U16(12), name: "Феникс\0", unk1: U32(1) }, ServerDesc { id: U16(51), name: "Pyros (Europe)\0", unk1: U32(4) }] }, unk1: RVec { data: [U16(4), U16(9), U16(5), U16(0), U16(6), U16(0), U16(7), U16(0), U16(8), U16(0)] }, unk2: RVec { data: [U16(0), U16(10), U16(0), U16(11), U16(0), U16(12), U16(11), U16(51), U16(0)] }, endpoints: RVec { data: [EndpointDesc { server_id: U16(4), ip: 193.53.9.37, port: U16(4254), unk3: U16(25) }, EndpointDesc { server_id: U16(12), ip: 164.53.9.37, port: U16(4254), unk3: U16(42) }] }, unk4: U32(0), unk5: RBool(0), unk6: U32(0), unixtime: U64(1789167686), unk8: U32(1125424989), mb_selected_server_id: U16(4), unk10: U64(1773309940), unk11: RBytes { data: [2] }, unk12: U32(131584), xkey0: U32(10054628), xkey1: U64(487863089555892), rdtsc_echo: U64(130862247235628), unk16: "\0" })
+```
+
 ## 0x23 DailyRewardTaken
 ```
 Server: packet 0x23 (35) ; Length: 33 (0x21) bytes
@@ -69,6 +120,47 @@ parsed: DealtDamage(DealtDamage { target_id: U32(2347483869), damager_id: U32(23
 ```
 Server: packet 0xB1 (177) ; Length 0
 ```
+
+## 0xBB MoveItemRequest
+## 0xBE MoveItemResponse
+```
+--- --- --- --- --- --- --- --- --- --- --- --- --- --- move item request, slot #8 -> #20
+Client: packet 187 (0xbb) ; Length: 10 (0xa) bytes
+0000:   25 08 00 02  02 25 14 00  02 02                      %....%....
+parsed: [Op25([8, 0, 2, 2]), Op25([20, 0, 2, 2])]
+--- --- --- --- --- --- --- --- --- --- --- --- --- --- slot #20, l-to-r, u-to-d
+Server: packet 190 (0xbe) ; Length: 10 (0xa) bytes
+0000:   25 08 00 02  02 25 14 00  02 02                      %....%....
+parsed: [Op25([8, 0, 2, 2]), Op25([20, 0, 2, 2])]
+```
+
+## 0xC1 ReceiveItem
+```
+Server: packet 0xC1 (193) ReceiveItem
+parsed: ReceiveItem(ReceiveItem { unk0: U8(7), item: ItemDesc { slot: InvSlot { idx: 0, unk1: 0, tab: 0, inv: 2 }, id: U32(2341), count: U16(1), flags: U32(163840) } })
+left: Length: 34 (0x22) bytes
+0000:   04 00 00 00  00 04 00 00  00 00 04 00  00 00 00 02   ................
+0010:   00 00 01 00  01 00 04 00  00 00 00 01  00 04 00 00   ................
+0020:   00 00                                                ..
+parsed: [U32(0), U32(0), U32(0), U16(0), U8(0), U8(0), U32(0), U8(0), U32(0)]
+```
+
+## 0x64 PosCamera
+Required to enter game world
+```
+Server: packet 0x64 (100) PosCamera;
+Length: 126 (0x7e) bytes
+0000:   04 00 00 00  00 05 07 7c  7e c2 05 62  4e dc c2 05   .......|~..bN...
+0010:   a1 b0 d7 bf  01 00 05 00  00 a0 40 02  05 00 02 0a   ..........@.....
+0020:   0a 04 22 45  4a b7 04 00  00 00 00 01  00 01 00 02   .."EJ...........
+0030:   3b 0a 04 22  45 4a b7 04  00 00 00 00  01 02 02 02   ;.."EJ..........
+0040:   01 01 02 02  00 04 02 ca  04 04 22 45  4a b7 04 00   .........."EJ...
+0050:   00 00 00 01  00 01 03 05  b0 b1 07 41  02 99 07 04   ...........A....
+0060:   22 45 4a b7  04 00 00 00  00 01 00 01  00 02 6a 0a   "EJ...........j.
+0070:   04 22 45 4a  b7 04 b8 0b  00 00 01 00  01 00         ."EJ..........
+PosCamera(PosCamera { unk0: U32(0), coords: Coords { x: F32(-63.62112), y: F32(-110.15309) }, rot: F32(-1.6850778), unk4: U8(0), movspeed: F32(5.0), effects: RVec { data: [CameraEffect { id: U16(2570), player_id: U32(3075097890), unk2: U32(0), v1: Empty, v2: Empty }, CameraEffect { id: U16(2619), player_id: U32(3075097890), unk2: U32(0), v1: U16(U16(258)), v2: U16(U16(1024)) }, CameraEffect { id: U16(1226), player_id: U32(3075097890), unk2: U32(0), v1: Empty, v2: F32(F32(8.480881)) }, CameraEffect { id: U16(1945), player_id: U32(3075097890), unk2: U32(0), v1: Empty, v2: Empty }, CameraEffect { id: U16(2666), player_id: U32(3075097890), unk2: U32(3000), v1: Empty, v2: Empty }] } })
+```
+
 
 ## 0x19C Heartbeat 3?
 ```

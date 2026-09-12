@@ -88,7 +88,7 @@ pub async fn process_packet(
         Packet::ExitRequest(p) => {
             // TODO: Send init packets depending on type
             out.push(PacketOrBlob::Packet(Packet::ExitResponse(ExitResponse {
-                unk: U32(0),
+                delay: U32(0),
             })));
             out.push(PacketOrBlob::Packet(Packet::ConnectionError(ConnectionError {
                 code: U32(100),

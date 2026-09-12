@@ -3,38 +3,38 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use binrw::{BinRead, BinResult, BinWrite, NullString, binread, binrw, binwrite, meta::ReadEndian};
 use pretty_hex::{HexConfig, PrettyHex};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x01u8)]
 pub struct U8(pub u8);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x02u8)]
 pub struct U16(pub u16);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x03u8)]
 pub struct RBool(pub u8);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x04u8)]
 pub struct U32(pub u32);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[binrw]
 #[brw(little, magic = 0x05u8)]
 pub struct F32(pub f32);
 impl Eq for F32 {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x08u8)]
 pub struct U64(pub u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[binrw]
 #[brw(little, magic = 0x13u8)]
 pub struct Op13(pub [u16; 4]);

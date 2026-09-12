@@ -4,14 +4,14 @@ use clap::Parser;
 use fast_socks5::{
     ReplyError, Result, Socks5Command, SocksError, server::{DnsResolveHelper as _, Socks5ServerProtocol, states::CommandRead}, util::target_addr::{TargetAddr, ToTargetAddr}
 };
-use pretty_hex::PrettyHex;
+
 use tracing::info;
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use tokio::task;
 // use pretty_hex::PrettyHex;
 
-use crate::{mitm::Mitm, server::Server};
+use crate::{mitm::Mitm, mitm_gui::MitmGuiState, server::Server};
 
 pub mod cipher;
 pub mod protocol;
@@ -19,6 +19,8 @@ pub mod ptrace;
 pub mod rqode_binrw;
 pub mod server;
 pub mod mitm;
+pub mod mitm_gui;
+pub mod packet_view;
 
 #[derive(clap::ValueEnum, Clone, Copy)]
 enum Mode {
@@ -47,9 +49,9 @@ async fn spawn_socks_server() -> Result<()> {
 
     info!("Listen for socks connections");
 
-    let server = match args.mode {
-        Mode::Server => Some(Arc::new(Server::init())),
-        Mode::Mitm => None,
+    let mode = match args.mode {
+        Mode::Server => ServerMode::Server(Arc::new(Server::init())),
+        Mode::Mitm => ServerMode::Mitm(mitm_gui::start()),
     };
     
     // Standard TCP loop
@@ -57,7 +59,7 @@ async fn spawn_socks_server() -> Result<()> {
         match listener.accept().await {
             Ok((socket, _client_addr)) => {
                 println!("SOCKS connect from {_client_addr}");
-                spawn_and_log_error(serve_socks5(server.clone(), socket));
+                spawn_and_log_error(serve_socks5(socket, mode.clone()));
             }
             Err(err) => {
                 println!("accept error = {:?}", err);
@@ -66,7 +68,13 @@ async fn spawn_socks_server() -> Result<()> {
     }
 }
 
-async fn serve_socks5(server: Option<Arc<Server>>, socket: tokio::net::TcpStream) -> Result<(), SocksError> {
+#[derive(Clone)]
+enum ServerMode {
+    Server(Arc<Server>),
+    Mitm(MitmGuiState),
+}
+
+async fn serve_socks5(socket: tokio::net::TcpStream, mode: ServerMode) -> Result<(), SocksError> {
     let (proto, cmd, target_addr) = Socks5ServerProtocol::accept_no_auth(socket).await?
         .read_command()
         .await?
@@ -76,11 +84,11 @@ async fn serve_socks5(server: Option<Arc<Server>>, socket: tokio::net::TcpStream
     match cmd {
         Socks5Command::TCPConnect => {
             println!("Connect to {}", target_addr);
-            match &server {
-                None => {
-                    spawn_and_log_error(do_mitm(proto, target_addr));
+            match mode {
+                ServerMode::Mitm(state) => {
+                    spawn_and_log_error(do_mitm(proto, target_addr, state));
                 },
-                Some(s) => {
+                ServerMode::Server(s) => {
                     // Refuse connection to github ?..
                     if target_addr.clone().into_string_and_port().1 == 443 {
                         proto.reply_error(&ReplyError::ConnectionRefused).await?;
@@ -114,6 +122,7 @@ where
 async fn do_mitm(
     proto: Socks5ServerProtocol<TcpStream, CommandRead>,
     addr: TargetAddr,
+    state: MitmGuiState,
 ) -> Result<()> {
     let addr = addr.into_string_and_port();
     let port = addr.1;
@@ -140,7 +149,7 @@ async fn do_mitm(
     let mut rbuf = vec![0; 0xFFFF];
     let mut wbuf = vec![0; 0xFFFF];
 
-    let mut state = Mitm::new(false);
+    let mut state = Mitm::new(false, state);
 
     loop {
         tokio::select! {

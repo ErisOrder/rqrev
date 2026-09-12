@@ -7,6 +7,10 @@
 //! 
 //! strings and byte arrays are not distinguished easily,
 //! they are represented as U16 len, variable data
+//! 
+//! # WARNING
+//! Packets structure and type codes may differ in different game versions...
+//! But at least they seem not to reuse type codes
 
 use std::net::Ipv4Addr;
 
@@ -89,8 +93,8 @@ pub enum PacketType {
     SteamDlcInstalled = 0x25,
 
     /// Server -> Client
-    /// Answer to TakeReward
-    DailyRewardTaken = 0x23,
+    /// Daily reward status
+    DailyReward = 0x23,
     
     /// Client -> Server
     /// Issued when user presses "take reward" on char select screen
@@ -161,9 +165,9 @@ pub enum PacketType {
     /// Sent when new entity moves
     EntityMove = 0x5C,
 
-    // /// Server -> Client
-    // /// Sent when entity drops item
-    // EntityDrop = 0x5D,
+    /// Server -> Client
+    /// Sent when entity drops item
+    EntityDrop = 0x5D,
 
     /// Server -> Client
     /// Sent when entity was removed (or disappear?)
@@ -187,11 +191,21 @@ pub enum PacketType {
     
     /// Client -> Server
     /// Sent when player wants to pickup dropped item
+    /// Also used to activate various things, like chests
     PickupRequest = 0x95,
+
+    /// Server -> Client
+    /// Sent when entity attacks other entity or uses ability
+    EntityAction = 0x9A,
 
     /// Server -> Client
     /// Sent when any player deals damage to entity
     DealtDamage = 0x9C,
+
+    /// Server -> Client
+    /// Not sure about it, but probably sent on some enity action like regen/hp update
+    /// Probably has other ID on older version
+    EntityActionPassive = 0xA0,
 
     /// Server -> Client
     EntityDeath = 0xA4,
@@ -227,12 +241,37 @@ pub enum PacketType {
     MoveItem = 0xBE,
 
     /// Server -> Client
+    /// Sent when entity sets agro target (?)
+    SetAgroTarget = 0xC0,
+
+    /// Server -> Client
     /// Sent when player receives item
     ReceiveItem = 0xC1,
+    
+    /// Server -> Client
+    /// May containt other player data
+    PacketC5 = 0xC5,
     
     /// Client -> Server
     /// Sent when player increases character stat
     StatUpdateRequest = 0xCD,
+
+    /// Client -> Server
+    /// Sent when player clicks on dialog entry
+    DialogEntryReq = 0xD4,
+
+    /// Client -> Server
+    /// Sent when player clicks on quest dialog entry
+    DialogEntryCheckQuest = 0xD5,
+    
+    /// Server -> Client
+    /// Response to DialogEntryReq
+    /// Closes dialog window
+    DialogClose = 0xD7,
+    
+    /// Server -> Client
+    /// Response to DialogEntryReq
+    DialogEntryRes = 0xD8,
 
     /// Client -> Server
     /// Sent when player buys item from NPC
@@ -255,10 +294,39 @@ pub enum PacketType {
     /// Might optionally be encoded using `yasli` lib
     /// Usually contains regular packet with size over some threshold
     CompressedData = 0x129,
+
+    /// Seems to be same as CompressedData?
+    /// Changed in newer game version?
+    CompressedData2 = 0x12A,
+
+    /// Server -> Client
+    /// Sent when player starts action on some entity, like collecting resource
+    StartEntityAction = 0x12F,
+    
+    /// Server -> Client
+    /// Sent when player normally stops action on some entity, like collecting resource
+    StopEntityAction = 0x130,
+    
+    /// Client -> Server
+    /// Sent when player aborts current processing action
+    AbortCurrentAction = 0x131,
+
+    /// Server -> Client
+    /// Sent when player aborts current processing action
+    AbortEntityAction = 0x132,
     
     /// Server -> Client
     /// Contains PNG avatar of guild?
     GuildAvatar = 0x148,
+
+    /// Client -> Server
+    /// Sent when client wants to get friends online status
+    CheckFriendsStatus = 0x162,
+
+    /// Server -> Client
+    /// Response to CheckFriendStatus, one per friend
+    /// May be short or extended
+    FriendStatus = 0x163,
     
     /// Server -> Client
     ShowEmotion = 0x194,
@@ -280,6 +348,15 @@ pub enum PacketType {
 
     /// Server -> Client
     ExitResponse = 0x1D5,
+
+    /// Client -> Server
+    /// Only sent from game world
+    ExitRequestIngame = 0x1D7,
+
+    /// Server -> Client
+    /// Response to ExitRequestIngame
+    /// Contains delay seconds
+    ExitResponseIngame = 0x1D8,
 }
 
 #[binrw]
@@ -348,8 +425,12 @@ pub enum Packet {
     UseAbility(UseAbility),
     #[brw(magic(0x95u16))]
     PickupRequest(PickupRequest),
+    #[brw(magic(0x9Au16))]
+    EntityAction(EntityAction),
     #[brw(magic(0x9Cu16))]
     DealtDamage(DealtDamage),
+    #[brw(magic(0xA0u16))]
+    EntityActionPassive(EntityActionPassive),
     #[brw(magic(0xA4u16))]
     EntityDeath(EntityDeath),
     #[brw(magic(0xA7u16))]
@@ -366,6 +447,8 @@ pub enum Packet {
     MoveItemResponse(MoveItem),
     #[brw(magic(0xC1u16))]
     ReceiveItem(ReceiveItem),
+    #[brw(magic(0xC5u16))]
+    PacketC5(PacketC5),
     #[brw(magic(0xCDu16))]
     StatUpdateRequest(StatUpdateRequest),
     #[brw(magic(0x103u16))]
@@ -378,39 +461,29 @@ pub enum Packet {
     BuyBackResponse(BuyBack),
     #[brw(magic(0x129u16))]
     CompressedData(CompressedData),
+    #[brw(magic(0x12Au16))]
+    CompressedData2(CompressedData),
     #[brw(magic(0x196u16))]
     ShowEmotion(ShowEmotion),
     #[brw(magic(0x199u16))]
     Heartbeat2(Heartbeat2),
+    #[brw(magic(0x19Cu16))]
+    Heartbeat3(Heartbeat2),
     #[brw(magic(0x1D4u16))]
     ExitRequest(ExitRequest),
     #[brw(magic(0x1D5u16))]
     ExitResponse(ExitResponse),
+    #[brw(magic(0x1D7u16))]
+    ExitRequestIngame(ExitRequest),
+    #[brw(magic(0x1D8u16))]
+    ExitResponseIngame(ExitResponse),
 }
 
-// Client: packet 0x1 (01) AuthRequest; Length: 175 (0xaf) bytes
-// 0000:   04 51 c5 a7  00 04 ee c3  a7 00 01 10  02 21 00 32   .Q...........!.2
-// 0010:   39 34 31 37  61 61 62 65  38 36 38 34  30 32 62 38   9417aabe868402b8
-// 0020:   31 30 62 61  32 66 34 32  37 34 32 36  35 63 31 00   10ba2f4274265c1.
-// 0030:   02 01 00 00  08 ec 34 af  c1 5c 23 00  00 02 0d 00   ......4..\#.....
-// 0040:   52 53 62 41  65 38 70 62  54 4f 54 48  00 02 01 00   RSbAe8pbTOTH....
-// 0050:   00 03 00 03  00 04 00 00  00 00 02 06  00 36 24 4b   .............6$K
-// 0060:   fe 8c 0e 19  36 02 50 ed  52 12 99 36  00 e0 4b 3c   ....6.P.R..6..K<
-// 0070:   1a b7 36 5e  0c 74 0e fd  14 36 00 00  00 00 00 00   ..6^.t...6......
-// 0080:   36 00 00 00  00 00 00 04  56 af 4b c6  08 56 af 4b   6.......V.K..V.K
-// 0090:   c6 a4 fd 90  cd 02 65 6e  02 01 00 00  02 01 00 00   ......en........
-// 00a0:   02 01 00 00  02 08 00 63  6c 61 73 73  69 63 00      .......classic.
-// parsed: [U32(10995025), U32(10994670), U8(16), "29417aabe868402b810ba2f4274265c1\0", "\0",
-// U64(38881293448428), "RSbAe8pbTOTH\0", "\0", Bool(0), Bool(0), U32(0), U16(6),
-// Op36(2365475620, 6414), Op36(1391284226, 39186), Op36(1011605504, 46874), Op36(242486366, 5373),
-// Op36(0, 0), Op36(0, 0), U32(3326848854), U64(14812618058564874070), U16(28261), "\0", "\0",
-// "\0", "classic\0"]
-// parsed: AuthRequest(AuthRequest { pc_millis_shift: U32(12289203), pc_millis: U32(12288848), auth_type: U8(16), account_id: "29417aabe868402b810ba2f4274265c1\0", unk0: "\0", unk1: U64(38881293448428), sign_in_code: "RSbAe8pbTOTH\0", unk2: "\0", unk3: RBool(0), unk4: RBool(0), unk5: U32(0), unk6: RVec { data: [Op36(2365475620, 6414), Op36(1391284226, 39186), Op36(1011605504, 46874), Op36(242486366, 5373), Op36(0, 0), Op36(0, 0)] }, unk7: U32(3326848854), unk8: U64(14812618058564874070), unk9: U16(28261), unk10: "\0", unk11: "\0", unk12: "\0", gateway: "classic\0" })// 
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthRequest {
-    /// time + 354
+    /// time + 354 (game version number at time of capture)
     pub pc_millis_shift: U32,
     /// Just time
     pub pc_millis: U32,
@@ -630,7 +703,8 @@ pub struct PinResult {
 
 #[binrw]
 #[brw(little)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, derive_more::Debug, Default)]
+#[debug("[{:.2}, {:.2}]", x.0, y.0)]
 pub struct Coords {
     pub x: F32,
     pub y: F32,
@@ -757,13 +831,6 @@ pub struct Inventory {
     pub items: RVec<ItemDesc>,
 }
 
-// Server: packet 0xC1 (193) ReceiveItem
-// parsed: ReceiveItem(ReceiveItem { unk0: U8(7), item: ItemDesc { slot: InvSlot { idx: 0, unk1: 0, tab: 0, inv: 2 }, id: U32(2341), count: U16(1), flags: U32(163840) } })
-// left: Length: 34 (0x22) bytes
-// 0000:   04 00 00 00  00 04 00 00  00 00 04 00  00 00 00 02   ................
-// 0010:   00 00 01 00  01 00 04 00  00 00 00 01  00 04 00 00   ................
-// 0020:   00 00                                                ..
-// parsed: [U32(0), U32(0), U32(0), U16(0), U8(0), U8(0), U32(0), U8(0), U32(0)]
 #[binrw]
 #[brw(little)]
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
@@ -974,7 +1041,6 @@ pub struct PlayerEntity {
     pub ach_data: RZlib,
 }
 
-// [U32(2347483652), F32(32.25), F32(55.75), U16(1331), U16(65), U16(24576)]
 #[binrw]
 #[brw(little)]
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
@@ -1011,9 +1077,6 @@ pub struct ChatMessage {
     pub name: RString,
 }
 
-// Server: packet 82 (0x52) ; Length: 11 (0xb) bytes
-// 0000:   01 00 08 4c  00 00 00 00  00 00 00                   ...L.......
-// parsed: [U8(0), U64(76)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1030,21 +1093,6 @@ pub struct SwitchLocation {
     pub unk1: U32,
 }
 
-// Server: packet 0x64 (100) ; Length: 126 (0x7e) bytes
-// 0000:   04 00 00 00  00 05 e7 91  02 43 05 2f  8b d9 42 05   .........C./..B.
-// 0010:   aa 66 7b bf  01 00 05 00  00 a0 40 02  05 00 02 3b   .f{.......@....;
-// 0020:   0a 04 45 4f  49 b7 04 00  00 00 00 01  02 02 02 01   ..EOI...........
-// 0030:   01 02 02 21  04 02 25 08  04 45 4f 49  b7 04 00 00   ...!..%..EOI....
-// 0040:   00 00 01 00  01 00 02 ca  04 04 45 4f  49 b7 04 00   ..........EOI...
-// 0050:   00 00 00 01  00 01 03 05  9a 99 61 42  02 99 07 04   ..........aB....
-// 0060:   45 4f 49 b7  04 00 00 00  00 01 00 01  00 02 6a 0a   EOI...........j.
-// 0070:   04 45 4f 49  b7 04 b8 0b  00 00 01 00  01 00         .EOI..........
-// parsed: [U32(0), F32(130.56993), F32(108.77184), F32(-0.9820353), U8(0), F32(5), U16(5),
-// U16(2619), U32(3075034949), U32(0), U8(2), U16(258), U8(2), U16(1057),
-// U16(2085), U32(3075034949), U32(0), U8(0), U8(0),
-// U16(1226), U32(3075034949), U32(0), U8(0), U8(3), F32(56.4),
-// U16(1945), U32(3075034949), U32(0), U8(0), U8(0),
-// U16(2666), U32(3075034949), U32(3000), U8(0), U8(0)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1113,12 +1161,6 @@ impl PrefixedValue {
     }
 }
 
-// Client: packet 146 (0x92) ; Length: 40 (0x28) bytes
-// 0000:   04 8c c2 eb  8b 02 08 00  25 00 00 00  00 01 ff 05   ........%.......
-// 0010:   5c eb 82 c1  05 6a 22 ce  42 05 82 19  92 c1 05 90   \....j".B.......
-// 0020:   b2 bd 42 04  00 00 00 00                             ..B.....
-// parsed: [U32(2347483788), U16(8), Op25([0, 0, 0, 0]), U8(255), F32(-16.364922),
-// F32(103.067215), F32(-18.262455), F32(94.848755), U32(0)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1142,13 +1184,41 @@ pub struct PickupRequest {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityAction {
+    pub entity_id: U32,
+    pub skill_id: U16,
+    /// Radius/point?
+    pub dtype: U16,
+    pub param: F32,
+    #[brw(if(dtype.0 == 3))]
+    pub pos: Option<Coords>,
+    pub target_id: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DealtDamage {
     pub target_id: U32,
     pub damager_id: U32,
     pub unk8: U8,
-    pub unk9: U32,
+    pub skill_id: U32,
     pub damage: U32,
     pub unk11: U32,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityActionPassive {
+    pub entity_id: U32,
+    pub kind: U16,
+    #[brw(if(kind.0 == 3))]
+    pub unk3: Option<U32>,
+    #[brw(if(kind.0 == 6))]
+    pub unk6: Option<U32>,
+    #[brw(if(kind.0 == 8))]
+    pub target_id: Option<U32>,
 }
 
 #[binrw]
@@ -1158,13 +1228,6 @@ pub struct EntityDeath {
     pub id: U32,
 }
 
-// Server: packet 174 (0xae) ReceivedCurrency; Length: 29 (0x1d) bytes
-// 0000:   01 05 08 0f  00 00 00 00  00 00 00 04  00 00 00 00   ................
-// 0010:   04 55 06 00  00 02 01 00  04 00 00 00  00            .U...........
-// parsed: [U8(5), U64(15), U32(0), U32(1621), U16(1), U32(0)]
-// Server: packet 174 (0xae) ; Length: 12 (0xc) bytes
-// 0000:   01 04 04 70  00 00 00 04  13 00 00 00                ...p........
-// parsed: [U8(4), U32(112), U32(19)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1201,14 +1264,6 @@ pub struct SkillCooldown {
     pub skill_id: U16,
 }
 
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- move item request, slot #8 -> #20
-// Client: packet 187 (0xbb) ; Length: 10 (0xa) bytes
-// 0000:   25 08 00 02  02 25 14 00  02 02                      %....%....
-// parsed: [Op25([8, 0, 2, 2]), Op25([20, 0, 2, 2])]
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- slot #20, l-to-r, u-to-d
-// Server: packet 190 (0xbe) ; Length: 10 (0xa) bytes
-// 0000:   25 08 00 02  02 25 14 00  02 02                      %....%....
-// parsed: [Op25([8, 0, 2, 2]), Op25([20, 0, 2, 2])]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1217,13 +1272,20 @@ pub struct MoveItem {
     pub to: InvSlot,
 }
 
-// parsed: [U8(3), Op25([3, 0, 2, 2]), U32(1621), U16(1), U32(4096)]
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiveItem {
     pub unk0: U8,
     pub item: ItemDesc,
+}
+
+#[binrw]
+#[brw(little)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketC5 {
+    pub unk0: RZlib,
+    pub unk1: U32,
 }
 
 #[binrw]
@@ -1300,6 +1362,7 @@ pub struct ExitRequest {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExitResponse {
-    pub unk: U32,
+    /// Seconds
+    pub delay: U32,
 }
 
